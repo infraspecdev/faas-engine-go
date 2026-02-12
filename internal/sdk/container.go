@@ -9,22 +9,24 @@ import (
 	"log"
 	"os"
 	"slices"
+	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 )
 
-func Init() (context.Context, *client.Client, error) {
-	ctx := context.Background()
+func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 
 	apiclient, err := client.New(
 		client.FromEnv,
 		client.WithAPIVersionFromEnv(),
 	)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create Docker client: %w", err)
+		cancel()
+		return nil, nil, nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
-	return ctx, apiclient, nil
+	return ctx, apiclient, cancel, nil
 }
 
 func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
@@ -101,8 +103,9 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 		Image: imageName,
 		Name:  containerName,
 		Config: &container.Config{
-			Cmd: command,
-			Tty: false,
+			Cmd:  command,
+			Tty:  false,
+			User: "1000:1000",
 		},
 	})
 

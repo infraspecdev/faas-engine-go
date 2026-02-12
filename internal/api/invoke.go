@@ -1,9 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"faas-engine-go/internal/sdk"
 
@@ -25,27 +28,35 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	functionName := vars["functionName"]
 
 	fmt.Printf("Invoking function: %s\n", functionName)
-	ctx, cli, err := sdk.Init()
+
+	var req invokeReq
+
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil {
+		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		return
+	}
+	defer r.Body.Close()
+
+	cmd := strings.TrimSpace(req.Cmd)
+	if cmd == "" {
+		http.Error(w, "cmd is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx, cli, cancel, err := sdk.Init(r.Context())
 
 	if err != nil {
 		http.Error(w, "failed to initialize SDK", http.StatusInternalServerError)
 		return
 	}
+	defer cancel()
 
 	err = sdk.PullImage(ctx, cli, functionName)
 	if err != nil {
 		http.Error(w, "failed to pull image", http.StatusInternalServerError)
 		return
 	}
-
-	var req invokeReq
-
-	err = json.NewDecoder(r.Body).Decode(&req)
-	if err != nil {
-		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
-		return
-	}
-	defer r.Body.Close()
 
 	args := []string{"sh", "-c", req.Cmd}
 
@@ -56,34 +67,40 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	fmt.Println("Container created with ID:", containerId)
-	err = sdk.StartContainer(ctx, cli, containerId)
 
+	//ensure that the container is stopped and deleted after execution
+	defer func(id string) {
+		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		if err := sdk.StopContainer(cleanupCtx, cli, id); err != nil {
+			fmt.Printf("cleanup: failed to stop container %s: %v\n", id, err)
+		}
+
+		if err := sdk.DeleteContainer(cleanupCtx, cli, id); err != nil {
+			fmt.Printf("cleanup: failed to delete container %s: %v\n", id, err)
+		}
+	}(containerId)
+
+	err = sdk.StartContainer(ctx, cli, containerId)
 	if err != nil {
-		http.Error(w, "failed to start container", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to start container: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	_, err = sdk.WaitContainer(ctx, cli, containerId)
+	statuscode, err := sdk.WaitContainer(ctx, cli, containerId)
 	if err != nil {
-		http.Error(w, "wait failed", 500)
+		http.Error(w, fmt.Sprintf("container execution failed: %v", err), http.StatusInternalServerError)
+		return
+	}
+	if statuscode != 0 {
+		http.Error(w, fmt.Sprintf("container execution failed with status code: %d", statuscode), http.StatusUnprocessableEntity)
 		return
 	}
 
 	logs, err := sdk.GetContainerLogs(ctx, cli, containerId)
 	if err != nil {
-		http.Error(w, "logs failed", 500)
-		return
-	}
-
-	err = sdk.StopContainer(ctx, cli, containerId)
-	if err != nil {
-		http.Error(w, "failed to stop container", http.StatusInternalServerError)
-		return
-	}
-
-	err = sdk.DeleteContainer(ctx, cli, containerId)
-	if err != nil {
-		http.Error(w, "failed to delete container", http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to retrieve container logs: %v", err), http.StatusInternalServerError)
 		return
 	}
 
