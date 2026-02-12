@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"faas-engine-go/internal/sdk"
+	"log/slog"
 
 	"github.com/gorilla/mux"
 )
@@ -25,9 +26,13 @@ type invokeReq struct {
 func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 
 	vars := mux.Vars(r)
-	functionName := vars["functionName"]
+	functionName := strings.TrimSpace(vars["functionName"])
+	if functionName == "" {
+		http.Error(w, "functionName is required", http.StatusBadRequest)
+		return
+	}
 
-	fmt.Printf("Invoking function: %s\n", functionName)
+	slog.Info("invoking function", "name", functionName)
 
 	var req invokeReq
 
@@ -66,7 +71,7 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to create container", http.StatusInternalServerError)
 		return
 	}
-	fmt.Println("Container created with ID:", containerId)
+	slog.Debug("container created", "id", containerId)
 
 	//ensure that the container is stopped and deleted after execution
 	defer func(id string) {
@@ -74,11 +79,11 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		defer cancel()
 
 		if err := sdk.StopContainer(cleanupCtx, cli, id); err != nil {
-			fmt.Printf("cleanup: failed to stop container %s: %v\n", id, err)
+			slog.Error("cleanup failed", "operation", "stop", "container", id, "error", err)
 		}
 
 		if err := sdk.DeleteContainer(cleanupCtx, cli, id); err != nil {
-			fmt.Printf("cleanup: failed to delete container %s: %v\n", id, err)
+			slog.Error("cleanup failed", "operation", "delete", "container", id, "error", err)
 		}
 	}(containerId)
 
@@ -98,7 +103,7 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	logs, err := sdk.GetContainerLogs(ctx, cli, containerId)
+	logs, err := sdk.LogContainer(ctx, cli, containerId)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to retrieve container logs: %v", err), http.StatusInternalServerError)
 		return

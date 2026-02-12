@@ -3,10 +3,12 @@ package sdk
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	"encoding/binary"
+
+	// "encoding/json"
 	"fmt"
 	"io"
-	"log"
+	"log/slog"
 	"os"
 	"slices"
 	"time"
@@ -30,61 +32,47 @@ func Init(parent context.Context) (context.Context, *client.Client, context.Canc
 }
 
 func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
-	// Pull the image
-
-	// image_list, err := apiclient.ImageList(ctx, client.ImageListOptions{
-	// 	All: true,
-	// })
-	// if err != nil {
-	// 	log.Fatalf("failed to list images: %v", err)
-	// }
-	// fmt.Println("listing images....\n", image_list)
-
-	// b, err := json.MarshalIndent(image_list, "", "  ")
-	// if err != nil {
-	// 	log.Fatalf("failed to marshal image list: %v", err)
-	// }
-	// fmt.Println(string(b))
-	// name := image_list.Items[0].RepoTags
-	// fmt.Println("listing image names")
-	// fmt.Println(name)
 	image_ref, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
 	defer image_ref.Close()
-	fmt.Println("pulling image.....")
+	slog.Info("Pulling image....")
 	io.Copy(os.Stdout, image_ref)
 	return nil
 }
 
-func ListContainers(ctx context.Context, cli *client.Client) {
-	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
-	})
-	fmt.Println("Listing names of the container")
-	fmt.Println(result.Items[0].Names)
-	if err != nil {
-		fmt.Println("error listing containers:", err)
-	}
+// func ListContainers(ctx context.Context, cli *client.Client) {
+// 	result, err := cli.ContainerList(ctx, client.ContainerListOptions{
+// 		All: true,
+// 	})
+// 	fmt.Println("Listing names of the container")
+// 	fmt.Println(result.Items[0].Names)
+// 	if err != nil {
+// 		fmt.Println("error listing containers:", err)
+// 	}
 
-	fmt.Println("Converting result to JSON...")
-	fmt.Println("Listing containers...")
+// 	fmt.Println("Converting result to JSON...")
+// 	fmt.Println("Listing containers...")
 
-	b, err := json.MarshalIndent(result, "", "  ")
-	if err != nil {
-		fmt.Println("Error converting result to JSON:", err)
-	}
+// 	b, err := json.MarshalIndent(result, "", "  ")
+// 	if err != nil {
+// 		fmt.Println("Error converting result to JSON:", err)
+// 	}
 
-	fmt.Println(string(b))
-}
+// 	fmt.Println(string(b))
+// }
 
 func CreateContainer(ctx context.Context, apiclient *client.Client, containerName string, imageName string, command []string) (string, error) {
 	// Create a container from the image
 	out, err := apiclient.ContainerList(ctx, client.ContainerListOptions{
 		All: true,
 	})
+
+	if imageName == "" {
+		return "", fmt.Errorf("image name cannot be empty")
+	}
 
 	if err != nil {
 		return "", fmt.Errorf("failed to list containers: %w", err)
@@ -94,11 +82,14 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 
 	for _, container := range containers {
 		if slices.Contains(container.Names, "/"+containerName) {
-			log.Printf("container with name %s already exists, skipping creation", containerName)
+			slog.Info("container already exists",
+				"name", containerName,
+				"id", container.ID,
+			)
+
 			return container.ID, nil
 		}
 	}
-
 	container, err := apiclient.ContainerCreate(ctx, client.ContainerCreateOptions{
 		Image: imageName,
 		Name:  containerName,
@@ -113,9 +104,12 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
-	log.Printf("created container with ID: %s", container.ID)
+	slog.Info("container created",
+		"id", container.ID,
+		"container_name", containerName,
+		"image", imageName,
+	)
 
-	fmt.Println(container)
 	return container.ID, nil
 }
 
@@ -126,7 +120,7 @@ func StartContainer(ctx context.Context, apiclient *client.Client, containerID s
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	log.Printf("started container with ID: %s", containerID)
+	slog.Info("container started", "id", containerID)
 	return nil
 }
 
@@ -140,7 +134,7 @@ func StopContainer(ctx context.Context, apiclient *client.Client, containerID st
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	log.Printf("stopped container with ID: %s", containerID)
+	slog.Info("container stopped", "id", containerID)
 	return nil
 }
 
@@ -153,7 +147,7 @@ func DeleteContainer(ctx context.Context, cli *client.Client, containerID string
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
 
-	fmt.Println("Container deleted successfully")
+	slog.Info("container deleted", "id", containerID)
 	return nil
 }
 
@@ -164,7 +158,10 @@ func StatsContainer(ctx context.Context, apiclient *client.Client, containerID s
 	})
 
 	if err != nil {
-		log.Fatalf("failed to get container stats: %v", err)
+		slog.Error("failed to get container stats",
+			"container_id", containerID,
+			"error", err,
+		)
 		return nil, err
 	}
 
@@ -177,7 +174,7 @@ func StatsContainer(ctx context.Context, apiclient *client.Client, containerID s
 	return buf.Bytes(), nil
 }
 
-func GetContainerLogs(ctx context.Context, cli *client.Client, containerID string) (string, error) {
+func LogContainer(ctx context.Context, cli *client.Client, containerID string) (string, error) {
 	out, err := cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -187,13 +184,40 @@ func GetContainerLogs(ctx context.Context, cli *client.Client, containerID strin
 	}
 	defer out.Close()
 
-	var buf bytes.Buffer
-	_, err = io.Copy(&buf, out)
-	if err != nil {
-		return "", err
+	var result bytes.Buffer
+	header := make([]byte, 8)
+
+	for {
+		// Read 8-byte header
+		_, err := io.ReadFull(out, header)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return "", err
+		}
+
+		// Docker frame format:
+		// Byte 0: stream type (1=stdout, 2=stderr)
+		// Bytes 1-3: unused
+		// Bytes 4-7: payload length (big endian uint32)
+
+		length := binary.BigEndian.Uint32(header[4:])
+		if length == 0 {
+			continue
+		}
+
+		// Read payload
+		payload := make([]byte, length)
+		_, err = io.ReadFull(out, payload)
+		if err != nil {
+			return "", err
+		}
+
+		result.Write(payload)
 	}
 
-	return buf.String(), nil
+	return result.String(), nil
 }
 
 func WaitContainer(ctx context.Context, cli *client.Client, containerID string) (int64, error) {
