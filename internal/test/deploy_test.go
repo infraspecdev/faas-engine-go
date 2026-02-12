@@ -2,7 +2,7 @@ package test
 
 import (
 	"bytes"
-	"faas-engine-go/cmd/runtime-manager/api"
+	"faas-engine-go/internal/api"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"

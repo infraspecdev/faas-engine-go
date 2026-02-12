@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"faas-engine-go/cmd/runtime-manager/api"
+	"faas-engine-go/internal/api"
 )
 
 func TestGreetHandler_Success(t *testing.T) {

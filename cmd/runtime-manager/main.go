@@ -1,7 +1,7 @@
 package main
 
 import (
-	"faas-engine-go/cmd/runtime-manager/api"
+	"faas-engine-go/internal/api"
 	"fmt"
 	"net/http"
 
@@ -17,9 +17,9 @@ func main() {
 
 	// main api s
 	r.HandleFunc("/functions", api.DeployHandler).Methods("POST")
-	r.HandleFunc("/functions/{function_name}/invoke", api.InvokeHandler).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler).Methods("POST")
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
-	r.HandleFunc("/functions/{function_name}", api.DeleteFunctionHandler).Methods("DELETE")
+	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
 
 	http.ListenAndServe(":8080", r)
 }
