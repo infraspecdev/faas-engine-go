@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
 	"time"
 
@@ -29,18 +28,6 @@ func Init(parent context.Context) (context.Context, *client.Client, context.Canc
 		return nil, nil, nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	return ctx, apiclient, cancel, nil
-}
-
-func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
-	image_ref, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to pull image: %w", err)
-	}
-
-	defer image_ref.Close()
-	slog.Info("Pulling image....")
-	io.Copy(os.Stdout, image_ref)
-	return nil
 }
 
 // func ListContainers(ctx context.Context, cli *client.Client) {
