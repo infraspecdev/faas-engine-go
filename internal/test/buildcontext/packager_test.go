@@ -20,7 +20,7 @@ func TestPackageFunction_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := buildcontext.PackageFunction(tempDir)
+	reader, err := buildcontext.CreateTarStream(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestPackageFunction_Success(t *testing.T) {
 }
 
 func TestPackageFunction_InvalidPath(t *testing.T) {
-	_, err := buildcontext.PackageFunction("./invalid/path")
+	_, err := buildcontext.CreateTarStream("./invalid/path")
 
 	if err == nil {
 		t.Fatal("expected error for invalid path")
