@@ -2,13 +2,17 @@ package buildcontext
 
 import (
 	"archive/tar"
+	"encoding/json"
+	"faas-engine-go/internal/api"
 	"fmt"
 	"io"
+	"mime/multipart"
+	"net/http"
 	"os"
 	"path/filepath"
 )
 
-func PackageFunction(dirPath string) (io.Reader, error) {
+func CreateTarStream(dirPath string) (io.Reader, error) {
 
 	info, err := os.Stat(dirPath)
 	if err != nil {
@@ -65,4 +69,62 @@ func PackageFunction(dirPath string) (io.Reader, error) {
 	}()
 
 	return pr, nil
+}
+
+func SendTarStream(tarStream io.Reader, url string, functionName string) (string, error) {
+
+	pr, pw := io.Pipe()
+	writer := multipart.NewWriter(pw)
+
+	go func() {
+		defer pw.Close()
+		defer writer.Close()
+
+		part, err := writer.CreateFormFile("file", "function.tar")
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		_, err = io.Copy(part, tarStream)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		err = writer.WriteField("name", functionName)
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+	}()
+
+	req, err := http.NewRequest("POST", url, pr)
+	if err != nil {
+		return "", err
+	}
+
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var response api.DeployResponse
+
+	err = json.NewDecoder(resp.Body).Decode(&response)
+	if err != nil {
+		return "", err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("server returned %s", resp.Status)
+	}
+
+	_, err = io.Copy(os.Stdout, resp.Body)
+
+	return response.Message, err
 }

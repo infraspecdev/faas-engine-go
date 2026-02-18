@@ -17,7 +17,7 @@ import (
 )
 
 func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 
 	apiclient, err := client.New(
 		client.FromEnv,

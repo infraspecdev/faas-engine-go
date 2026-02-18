@@ -9,7 +9,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
-func setupDocker(t *testing.T) (context.Context, *client.Client, func()) {
+func SetupDocker(t *testing.T) (context.Context, *client.Client, func()) {
 	t.Helper()
 
 	ctx, cli, cancel, err := sdk.Init(context.Background())
@@ -40,7 +40,7 @@ func createTestContainer(t *testing.T, ctx context.Context, cli *client.Client, 
 }
 
 func TestCreateContainer_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine1")
@@ -51,7 +51,7 @@ func TestCreateContainer_Success(t *testing.T) {
 }
 
 func TestCreateContainer_InvalidImage(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	_, err := sdk.CreateContainer(ctx, cli, "alpine", "", []string{"echo", "hello world"})
@@ -61,7 +61,7 @@ func TestCreateContainer_InvalidImage(t *testing.T) {
 }
 
 func TestCreateContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	_, err := sdk.CreateContainer(ctx, cli, "invalid/name/with/slashes", "alpine", []string{"echo", "hello world"})
@@ -71,7 +71,7 @@ func TestCreateContainer_Fail(t *testing.T) {
 }
 
 func TestDeleteContainer_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine")
@@ -83,7 +83,7 @@ func TestDeleteContainer_Success(t *testing.T) {
 }
 
 func TestDeleteContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	err := sdk.DeleteContainer(ctx, cli, "alpine360")
@@ -93,7 +93,7 @@ func TestDeleteContainer_Fail(t *testing.T) {
 }
 
 func TestStartContainer_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine")
@@ -105,7 +105,7 @@ func TestStartContainer_Success(t *testing.T) {
 }
 
 func TestStartContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	err := sdk.StartContainer(ctx, cli, "alpine123")
@@ -115,7 +115,7 @@ func TestStartContainer_Fail(t *testing.T) {
 }
 
 func TestStopContainer_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine")
@@ -127,7 +127,7 @@ func TestStopContainer_Success(t *testing.T) {
 }
 
 func TestStopContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	err := sdk.StopContainer(ctx, cli, "")
@@ -137,7 +137,7 @@ func TestStopContainer_Fail(t *testing.T) {
 }
 
 func TestContainerLogs_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine1")
@@ -164,7 +164,7 @@ func TestContainerLogs_Success(t *testing.T) {
 }
 
 func TestContainerLogs_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 	_, err := sdk.LogContainer(ctx, cli, "nonexistent")
 	if err == nil {
@@ -173,7 +173,7 @@ func TestContainerLogs_Fail(t *testing.T) {
 }
 
 func TestWaitContainer_Success(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 
 	id := createTestContainer(t, ctx, cli, "alpine1")
@@ -193,7 +193,7 @@ func TestWaitContainer_Success(t *testing.T) {
 }
 
 func TestWaitContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := setupDocker(t)
+	ctx, cli, cancel := SetupDocker(t)
 	defer cancel()
 	_, err := sdk.WaitContainer(ctx, cli, "nonexistent")
 	if err == nil {
