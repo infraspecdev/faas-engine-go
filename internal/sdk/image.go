@@ -32,21 +32,32 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 	slog.Info("Image name check result", "result", "image name is available")
 
 	image, err := apiclient.ImageBuild(ctx, tarfile, client.ImageBuildOptions{
-		Tags:       []string{imageName},
-		Dockerfile: "Dockerfile",
+		Tags:        []string{imageName},
+		Dockerfile:  "Dockerfile",
+		Remove:      true,
+		ForceRemove: true,
+		NoCache:     true,
 	})
 
 	if err != nil {
 		return fmt.Errorf("failed to build image: %w", err)
 	}
+	defer image.Body.Close()
 	io.Copy(os.Stdout, image.Body)
+
+	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
+	if err != nil {
+		return err
+	}
 
 	slog.Info("Image built successfully", "image_name", imageName)
 	return nil
 }
 
 func CheckImageName(ctx context.Context, apiclient *client.Client, imageName string) error {
-	images, err := apiclient.ImageList(ctx, client.ImageListOptions{})
+	images, err := apiclient.ImageList(ctx, client.ImageListOptions{
+		All: true,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to list images: %w", err)
 	}
@@ -69,5 +80,44 @@ func CheckImageName(ctx context.Context, apiclient *client.Client, imageName str
 			}
 		}
 	}
+	return nil
+}
+
+func TagImage(ctx context.Context, apiclient *client.Client, source string, target string) error {
+	// localhost:5000/source:latest
+	imageResult, err := apiclient.ImageTag(ctx, client.ImageTagOptions{
+		Source: source,
+		Target: target,
+	})
+
+	if err != nil {
+		return fmt.Errorf("failed to tag image: %w", err)
+	}
+
+	fmt.Print("Image TAG Result", imageResult)
+	return nil
+}
+
+func PushImage(ctx context.Context, apiclient *client.Client, target string) error {
+	imagePush, err := apiclient.ImagePush(ctx, target, client.ImagePushOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to push image: %w", err)
+	}
+	defer imagePush.Close()
+	io.Copy(os.Stdout, imagePush)
+	return nil
+}
+
+func RemoveImage(ctx context.Context, apiclient *client.Client, target string) error {
+	responses, err := apiclient.ImageRemove(ctx, target, client.ImageRemoveOptions{
+		Force:         false,
+		PruneChildren: false,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to remove image: %w", err)
+	}
+
+	fmt.Print("Image Remove Result", responses)
+
 	return nil
 }
