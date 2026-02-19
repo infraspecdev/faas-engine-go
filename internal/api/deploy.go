@@ -1,8 +1,10 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"faas-engine-go/internal/sdk"
+	"faas-engine-go/internal/service"
 	"fmt"
 	"net/http"
 )
@@ -20,7 +22,7 @@ func DeployHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, header, err := r.FormFile("file")
+	file, _, err := r.FormFile("file")
 	if err != nil {
 		http.Error(w, "Missing 'file' field", http.StatusBadRequest)
 		return
@@ -33,32 +35,23 @@ func DeployHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Println("Received file:", header.Filename)
+	ctx := context.Background()
 
-	ctx, cli, cancel, err := sdk.Init(r.Context())
+	ctx, cli, cancel, err := sdk.Init(ctx)
 	if err != nil {
 		http.Error(w, "failed to initialize SDK", http.StatusInternalServerError)
 		return
 	}
 	defer cancel()
 
-	err = sdk.CheckImageName(ctx, cli, name)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
+	deployer := service.Deployer{CLI: cli}
+
+	if err := deployer.Deploy(ctx, name, file); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	err = sdk.BuildImage(ctx, cli, name, file)
-
-	if err != nil {
-		http.Error(w, "failed to build image", http.StatusInternalServerError)
-		return
-	}
-
-	resp := DeployResponse{
-		Message: fmt.Sprintf("File received successfully and built as image '%s'", name),
-	}
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(DeployResponse{
+		Message: fmt.Sprintf("Deployed '%s' successfully", name),
+	})
 }
