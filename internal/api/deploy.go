@@ -1,7 +1,11 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"faas-engine-go/internal/sdk"
+	"faas-engine-go/internal/service"
+	"fmt"
 	"net/http"
 )
 
@@ -10,35 +14,44 @@ type DeployResponse struct {
 }
 
 func DeployHandler(w http.ResponseWriter, r *http.Request) {
+
 	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 
-	resp := DeployResponse{}
-
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
-		http.Error(w, "Invalid File Size", http.StatusBadRequest)
+		http.Error(w, "File too large", http.StatusBadRequest)
 		return
 	}
 
 	file, _, err := r.FormFile("file")
-
 	if err != nil {
-		http.Error(w, "missing 'file' form field", http.StatusBadRequest)
+		http.Error(w, "Missing 'file' field", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	name := r.FormValue("name")
+	if name == "" {
+		http.Error(w, "Missing function name", http.StatusBadRequest)
 		return
 	}
 
-	defer file.Close()
+	ctx := context.Background()
 
-	// , err := io.ReadAll(file)
-	// if err != nil {
-	// 	http.Error(w, "failed to read file", http.StatusInternalServerError)
-	// 	return
-	// }
+	ctx, cli, cancel, err := sdk.Init(ctx)
+	if err != nil {
+		http.Error(w, "failed to initialize SDK", http.StatusInternalServerError)
+		return
+	}
+	defer cancel()
 
-	// fmt.Print(string(data))
+	deployer := service.Deployer{CLI: cli}
 
-	resp.Message = "File received successfully"
+	if err := deployer.Deploy(ctx, name, file); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
+	json.NewEncoder(w).Encode(DeployResponse{
+		Message: fmt.Sprintf("Deployed '%s' successfully", name),
+	})
 }
