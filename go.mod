@@ -3,6 +3,7 @@ module faas-engine-go
 go 1.25.6
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/mux v1.8.1
 	github.com/moby/moby/api v1.53.0
 	github.com/moby/moby/client v0.2.2

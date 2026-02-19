@@ -4,21 +4,24 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
+	"net/http"
+	"net/netip"
 
 	// "encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"slices"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
 
 func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
-	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
 
 	apiclient, err := client.New(
 		client.FromEnv,
@@ -29,18 +32,6 @@ func Init(parent context.Context) (context.Context, *client.Client, context.Canc
 		return nil, nil, nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
 	return ctx, apiclient, cancel, nil
-}
-
-func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
-	image_ref, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to pull image: %w", err)
-	}
-
-	defer image_ref.Close()
-	slog.Info("Pulling image....")
-	io.Copy(os.Stdout, image_ref)
-	return nil
 }
 
 // func ListContainers(ctx context.Context, cli *client.Client) {
@@ -90,27 +81,61 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 			return container.ID, nil
 		}
 	}
-	container, err := apiclient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Image: imageName,
-		Name:  containerName,
-		Config: &container.Config{
-			Cmd:  command,
-			Tty:  false,
-			User: "1000:1000",
-		},
-	})
 
+	// cont, err := apiclient.ContainerCreate(ctx, client.ContainerCreateOptions{
+	// 	Image: imageName,
+	// 	Name:  containerName,
+	// 	Config: &container.Config{
+	// 		Cmd:  command,
+	// 		Tty:  false,
+	// 		User: "1000:1000",
+	// 	},
+	// })
+
+	containerPort, err := network.ParsePort("8080/tcp")
+
+	if err != nil {
+		return "", fmt.Errorf("failed to parse port: %w", err)
+	}
+
+	options := client.ContainerCreateOptions{
+		Config: &container.Config{
+			Image: imageName,
+			Tty:   false,
+			User:  "1000:1000",
+			ExposedPorts: network.PortSet{
+				containerPort: struct{}{},
+			},
+		},
+
+		HostConfig: &container.HostConfig{
+			PortBindings: network.PortMap{
+				containerPort: []network.PortBinding{
+					{
+						HostIP:   netip.IPv4Unspecified(),
+						HostPort: "", //0.0.0.0:random:8080
+					},
+				},
+			},
+			AutoRemove: true,
+		},
+
+		Name: containerName,
+	}
+
+	cont, err := apiclient.ContainerCreate(ctx, options)
 	if err != nil {
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
 	slog.Info("container created",
-		"id", container.ID,
+		"id", cont.ID,
 		"container_name", containerName,
 		"image", imageName,
 	)
 
-	return container.ID, nil
+	return cont.ID, nil
+
 }
 
 func StartContainer(ctx context.Context, apiclient *client.Client, containerID string) error {
@@ -228,4 +253,43 @@ func WaitContainer(ctx context.Context, cli *client.Client, containerID string) 
 	case status := <-statusCh.Result:
 		return status.StatusCode, nil
 	}
+}
+
+func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
+
+	url := fmt.Sprintf("http://localhost:%s/", hostPort)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	httpClient := &http.Client{
+		Timeout: 10 * time.Second,
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to call container: %w", err)
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("container returned status %d: %s",
+			resp.StatusCode, string(respBody))
+	}
+
+	var result map[string]any
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, fmt.Errorf("failed to decode container JSON: %w", err)
+	}
+
+	return result, nil
 }
