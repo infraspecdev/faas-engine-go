@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,8 @@ import (
 	"log/slog"
 
 	"github.com/gorilla/mux"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
 )
 
 // lambda invoke greet --data '{"name": "World"}'
@@ -19,9 +22,6 @@ import (
 // /functions/{functionName}/invoke
 
 // function name : alpine and command : {"echo" : "Hello, World!"}
-type invokeReq struct {
-	Cmd string `json:"cmd"`
-}
 
 func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 
@@ -34,20 +34,18 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("invoking function", "name", functionName)
 
-	var req invokeReq
-
-	err := json.NewDecoder(r.Body).Decode(&req)
+	body, err := io.ReadAll(r.Body)
 	if err != nil {
-		http.Error(w, "invalid JSON payload", http.StatusBadRequest)
+		http.Error(w, "failed to read request body", http.StatusBadRequest)
 		return
 	}
 	defer r.Body.Close()
 
-	cmd := strings.TrimSpace(req.Cmd)
-	if cmd == "" {
-		http.Error(w, "cmd is required", http.StatusBadRequest)
-		return
-	}
+	// cmd := strings.TrimSpace(req.Cmd)
+	// if cmd == "" {
+	// 	http.Error(w, "cmd is required", http.StatusBadRequest)
+	// 	return
+	// }
 
 	ctx, cli, cancel, err := sdk.Init(r.Context())
 
@@ -57,15 +55,13 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cancel()
 
-	err = sdk.PullImage(ctx, cli, functionName)
+	err = sdk.PullImage(ctx, cli, "localhost:5000/functions/echo:latest")
 	if err != nil {
 		http.Error(w, "failed to pull image", http.StatusInternalServerError)
 		return
 	}
 
-	args := []string{"sh", "-c", req.Cmd}
-
-	containerId, err := sdk.CreateContainer(ctx, cli, functionName, functionName, args)
+	containerId, err := sdk.CreateContainer(ctx, cli, functionName, "localhost:5000/functions/echo:latest", nil) // cmd should have been here
 
 	if err != nil {
 		http.Error(w, "failed to create container", http.StatusInternalServerError)
@@ -73,7 +69,7 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Debug("container created", "id", containerId)
 
-	//ensure that the container is stopped and deleted after execution
+	// ensure that the container is stopped and deleted after execution
 	defer func(id string) {
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
@@ -82,9 +78,9 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 			slog.Error("cleanup failed", "operation", "stop", "container", id, "error", err)
 		}
 
-		if err := sdk.DeleteContainer(cleanupCtx, cli, id); err != nil {
-			slog.Error("cleanup failed", "operation", "delete", "container", id, "error", err)
-		}
+		// if err := sdk.DeleteContainer(cleanupCtx, cli, id); err != nil {
+		// 	slog.Error("cleanup failed", "operation", "delete", "container", id, "error", err)
+		// }
 	}(containerId)
 
 	err = sdk.StartContainer(ctx, cli, containerId)
@@ -93,22 +89,49 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	statuscode, err := sdk.WaitContainer(ctx, cli, containerId)
+	inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{
+		Size: false,
+	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("container execution failed: %v", err), http.StatusInternalServerError)
-		return
-	}
-	if statuscode != 0 {
-		http.Error(w, fmt.Sprintf("container execution failed with status code: %d", statuscode), http.StatusUnprocessableEntity)
+		http.Error(w, fmt.Sprintf("failed to inspect container: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	logs, err := sdk.LogContainer(ctx, cli, containerId)
+	port, err := network.ParsePort("8080/tcp")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("failed to retrieve container logs: %v", err), http.StatusInternalServerError)
+		http.Error(w, fmt.Sprintf("failed to parse port: %v", err), http.StatusInternalServerError)
 		return
 	}
 
+	bindings := inspect.Container.NetworkSettings.Ports[port]
+	hostPort := bindings[0].HostPort
+
+	fmt.Printf("hostPort: %+v\n", hostPort)
+
+	result, err := sdk.InvokeContainer(ctx, hostPort, body)
+	if err != nil {
+		fmt.Print(err)
+		http.Error(w, fmt.Sprintf("failed to invoke container: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// statuscode, err := sdk.WaitContainer(ctx, cli, containerId)
+	// if err != nil {
+	// 	http.Error(w, fmt.Sprintf("container execution failed: %v", err), http.StatusInternalServerError)
+	// 	return
+	// }
+	// if statuscode != 0 {
+	// 	http.Error(w, fmt.Sprintf("container execution failed with status code: %d", statuscode), http.StatusUnprocessableEntity)
+	// 	return
+	// }
+
+	// logs, err := sdk.LogContainer(ctx, cli, containerId)
+	// if err != nil {
+	// 	http.Error(w, fmt.Sprintf("failed to retrieve container logs: %v", err), http.StatusInternalServerError)
+	// 	return
+	// }
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(logs))
+	json.NewEncoder(w).Encode(result)
 }
