@@ -21,7 +21,7 @@ import (
 )
 
 func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
-	ctx, cancel := context.WithTimeout(parent, 60*time.Second)
+	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
 
 	apiclient, err := client.New(
 		client.FromEnv,
@@ -256,6 +256,7 @@ func WaitContainer(ctx context.Context, cli *client.Client, containerID string) 
 }
 
 func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
+	fmt.Println("body in invoke container:", string(body))
 
 	url := fmt.Sprintf("http://localhost:%s/", hostPort)
 
