@@ -55,13 +55,14 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cancel()
 
-	err = sdk.PullImage(ctx, cli, "localhost:5000/functions/echo:latest")
+	target := "localhost:5000/functions/" + functionName
+	err = sdk.PullImage(ctx, cli, target)
 	if err != nil {
 		http.Error(w, "failed to pull image", http.StatusInternalServerError)
 		return
 	}
 
-	containerId, err := sdk.CreateContainer(ctx, cli, functionName, "localhost:5000/functions/echo:latest", nil) // cmd should have been here
+	containerId, err := sdk.CreateContainer(ctx, cli, functionName, target, nil) // cmd should have been here
 
 	if err != nil {
 		http.Error(w, "failed to create container", http.StatusInternalServerError)
