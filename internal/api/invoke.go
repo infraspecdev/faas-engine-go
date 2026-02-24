@@ -41,12 +41,6 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	// cmd := strings.TrimSpace(req.Cmd)
-	// if cmd == "" {
-	// 	http.Error(w, "cmd is required", http.StatusBadRequest)
-	// 	return
-	// }
-
 	ctx, cli, cancel, err := sdk.Init(r.Context())
 
 	if err != nil {
@@ -70,18 +64,14 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Debug("container created", "id", containerId)
 
-	// ensure that the container is stopped and deleted after execution
 	defer func(id string) {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+		go func() {
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
 
-		if err := sdk.StopContainer(cleanupCtx, cli, id); err != nil {
-			slog.Error("cleanup failed", "operation", "stop", "container", id, "error", err)
-		}
-
-		// if err := sdk.DeleteContainer(cleanupCtx, cli, id); err != nil {
-		// 	slog.Error("cleanup failed", "operation", "delete", "container", id, "error", err)
-		// }
+			sdk.StopContainer(cleanupCtx, cli, id)
+			sdk.DeleteContainer(cleanupCtx, cli, id)
+		}()
 	}(containerId)
 
 	err = sdk.StartContainer(ctx, cli, containerId)
@@ -89,6 +79,8 @@ func InvokeHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf("failed to start container: %v", err), http.StatusInternalServerError)
 		return
 	}
+
+	time.Sleep(20 * time.Millisecond)
 
 	inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{
 		Size: false,

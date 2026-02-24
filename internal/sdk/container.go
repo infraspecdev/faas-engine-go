@@ -116,8 +116,7 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 						HostPort: "", //0.0.0.0:random:8080
 					},
 				},
-			},
-			AutoRemove: true,
+			}, AutoRemove: true,
 		},
 
 		Name: containerName,
