@@ -91,10 +91,20 @@ func TagImage(ctx context.Context, apiclient *client.Client, source string, targ
 	})
 
 	if err != nil {
+		slog.Error("Failed to tag image",
+			"source", source,
+			"target", target,
+			"error", err,
+		)
 		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
-	fmt.Print("Image TAG Result", imageResult)
+	slog.Info("Image tagged successfully",
+		"source", source,
+		"target", target,
+		"result", imageResult,
+	)
+
 	return nil
 }
 
@@ -103,21 +113,30 @@ func PushImage(ctx context.Context, apiclient *client.Client, target string) err
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
+
+	slog.Info("Pushing image....",
+		"target", target,
+		"result", imagePush,
+	)
+
 	defer imagePush.Close()
 	io.Copy(os.Stdout, imagePush)
+
 	return nil
 }
 
-func RemoveImage(ctx context.Context, apiclient *client.Client, target string) error {
-	responses, err := apiclient.ImageRemove(ctx, target, client.ImageRemoveOptions{
+func RemoveImage(ctx context.Context, apiclient *client.Client, source string) error {
+	responses, err := apiclient.ImageRemove(ctx, source, client.ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: false,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
-
-	fmt.Print("Image Remove Result", responses)
+	slog.Info("Image removed successfully",
+		"source", source,
+		"responses", responses,
+	)
 
 	return nil
 }
