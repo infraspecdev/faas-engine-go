@@ -43,7 +43,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		return nil, err
 	}
 
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
 	if err != nil {
