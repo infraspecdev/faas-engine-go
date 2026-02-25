@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"os"
 	"strings"
 
 	"github.com/moby/moby/client"
@@ -19,7 +18,7 @@ func PullImage(ctx context.Context, apiclient *client.Client, imageName string) 
 
 	defer image_ref.Close()
 	slog.Info("Pulling image....")
-	io.Copy(os.Stdout, image_ref)
+	io.Copy(io.Discard, image_ref)
 	return nil
 }
 
@@ -43,7 +42,7 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 		return fmt.Errorf("failed to build image: %w", err)
 	}
 	defer image.Body.Close()
-	io.Copy(os.Stdout, image.Body)
+	io.Copy(io.Discard, image.Body)
 
 	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
 	if err != nil {
@@ -104,7 +103,7 @@ func PushImage(ctx context.Context, apiclient *client.Client, target string) err
 		return fmt.Errorf("failed to push image: %w", err)
 	}
 	defer imagePush.Close()
-	io.Copy(os.Stdout, imagePush)
+	io.Copy(io.Discard, imagePush)
 	return nil
 }
 

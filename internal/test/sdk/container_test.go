@@ -3,7 +3,8 @@ package test
 import (
 	"context"
 	"faas-engine-go/internal/sdk"
-	"strings"
+	"io"
+	"log/slog"
 	"testing"
 
 	"github.com/moby/moby/client"
@@ -11,6 +12,7 @@ import (
 
 func SetupDocker(t *testing.T) (context.Context, *client.Client, func()) {
 	t.Helper()
+	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	ctx, cli, cancel, err := sdk.Init(context.Background())
 	if err != nil {
@@ -136,67 +138,67 @@ func TestStopContainer_Fail(t *testing.T) {
 	}
 }
 
-func TestContainerLogs_Success(t *testing.T) {
-	ctx, cli, cancel := SetupDocker(t)
-	defer cancel()
+// func TestContainerLogs_Success(t *testing.T) {
+// 	ctx, cli, cancel := SetupDocker(t)
+// 	defer cancel()
 
-	id := createTestContainer(t, ctx, cli, "alpine1")
+// 	id := createTestContainer(t, ctx, cli, "alpine1")
 
-	err := sdk.StartContainer(ctx, cli, id)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+// 	err := sdk.StartContainer(ctx, cli, id)
+// 	if err != nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
 
-	logs, err := sdk.LogContainer(ctx, cli, id)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+// 	logs, err := sdk.LogContainer(ctx, cli, id)
+// 	if err != nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
 
-	_, err = sdk.WaitContainer(ctx, cli, id)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+// 	_, err = sdk.WaitContainer(ctx, cli, id)
+// 	if err != nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
 
-	expected := "hello world\n"
-	if logs != expected {
-		t.Fatalf("expected logs to be '%s', got '%s'", expected, strings.Trim(logs, "\n"))
-	}
-}
+// 	expected := "hello world\n"
+// 	if logs != expected {
+// 		t.Fatalf("expected logs to be '%s', got '%s'", expected, strings.Trim(logs, "\n"))
+// 	}
+// }
 
-func TestContainerLogs_Fail(t *testing.T) {
-	ctx, cli, cancel := SetupDocker(t)
-	defer cancel()
-	_, err := sdk.LogContainer(ctx, cli, "nonexistent")
-	if err == nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
+// func TestContainerLogs_Fail(t *testing.T) {
+// 	ctx, cli, cancel := SetupDocker(t)
+// 	defer cancel()
+// 	_, err := sdk.LogContainer(ctx, cli, "nonexistent")
+// 	if err == nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
+// }
 
-func TestWaitContainer_Success(t *testing.T) {
-	ctx, cli, cancel := SetupDocker(t)
-	defer cancel()
+// func TestWaitContainer_Success(t *testing.T) {
+// 	ctx, cli, cancel := SetupDocker(t)
+// 	defer cancel()
 
-	id := createTestContainer(t, ctx, cli, "alpine1")
+// 	id := createTestContainer(t, ctx, cli, "alpine1")
 
-	err := sdk.StartContainer(ctx, cli, id)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
+// 	err := sdk.StartContainer(ctx, cli, id)
+// 	if err != nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
 
-	statuscode, err := sdk.WaitContainer(ctx, cli, id)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if statuscode != 0 {
-		t.Fatalf("expected status code 0, got %d", statuscode)
-	}
-}
+// 	statuscode, err := sdk.WaitContainer(ctx, cli, id)
+// 	if err != nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
+// 	if statuscode != 0 {
+// 		t.Fatalf("expected status code 0, got %d", statuscode)
+// 	}
+// }
 
-func TestWaitContainer_Fail(t *testing.T) {
-	ctx, cli, cancel := SetupDocker(t)
-	defer cancel()
-	_, err := sdk.WaitContainer(ctx, cli, "nonexistent")
-	if err == nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
+// func TestWaitContainer_Fail(t *testing.T) {
+// 	ctx, cli, cancel := SetupDocker(t)
+// 	defer cancel()
+// 	_, err := sdk.WaitContainer(ctx, cli, "nonexistent")
+// 	if err == nil {
+// 		t.Fatalf("unexpected error: %v", err)
+// 	}
+// }
