@@ -3,7 +3,7 @@ package buildcontext
 import (
 	"archive/tar"
 	"encoding/json"
-	"faas-engine-go/internal/api"
+	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -20,6 +20,11 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("path is not a directory")
 	}
+
+	// Check if Dockerfile already exists
+	dockerfilePath := filepath.Join(dirPath, "Dockerfile")
+	_, err = os.Stat(dockerfilePath)
+	dockerfileExists := (err == nil)
 
 	pr, pw := io.Pipe()
 
@@ -63,32 +68,44 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 			}
 			defer file.Close()
 
-			_, err = io.Copy(tw, file)
-			return err
+			if _, err := io.Copy(tw, file); err != nil {
+				return fmt.Errorf("failed copying %s: %w", relPath, err)
+			}
+			return nil
 		})
 
 		if err != nil {
 			pw.CloseWithError(err)
 			return
 		}
-		dockerfile := "FROM localhost:5000/runtimes/node:v1\nCOPY . /function\n"
 
-		dfBytes := []byte(dockerfile)
+		// Inject Dockerfile only if not present
+		if !dockerfileExists {
 
-		header := &tar.Header{
-			Name: "Dockerfile",
-			Mode: 0644,
-			Size: int64(len(dfBytes)),
-		}
+			baseImage := "localhost:5000/runtimes/node:v1" // should make it configurable
 
-		if err := tw.WriteHeader(header); err != nil {
-			pw.CloseWithError(err)
-			return
-		}
+			dockerfile := fmt.Sprintf(
+				"FROM %s\nWORKDIR /function\nCOPY . .\n",
+				baseImage,
+			)
 
-		if _, err := tw.Write(dfBytes); err != nil {
-			pw.CloseWithError(err)
-			return
+			dfBytes := []byte(dockerfile)
+
+			header := &tar.Header{
+				Name: "Dockerfile",
+				Mode: 0644,
+				Size: int64(len(dfBytes)),
+			}
+
+			if err := tw.WriteHeader(header); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+
+			if _, err := tw.Write(dfBytes); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
 		}
 	}()
 
@@ -137,7 +154,12 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 	}
 	defer resp.Body.Close()
 
-	var response api.DeployResponse
+	var response types.DeployResponse
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("server returned %s: %s", resp.Status, string(body))
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
