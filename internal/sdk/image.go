@@ -5,20 +5,21 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
 	"strings"
 
 	"github.com/moby/moby/client"
 )
 
 func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
-	image_ref, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
+	imageRef, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
-	defer image_ref.Close()
+	defer imageRef.Close()
 	slog.Info("Pulling image....")
-	io.Copy(io.Discard, image_ref)
+	io.Copy(io.Discard, imageRef)
 	return nil
 }
 
@@ -42,7 +43,10 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 		return fmt.Errorf("failed to build image: %w", err)
 	}
 	defer image.Body.Close()
-	io.Copy(io.Discard, image.Body)
+
+	if _, err := io.Copy(os.Stdout, image.Body); err != nil {
+		return fmt.Errorf("failed to read build output: %w", err)
+	}
 
 	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
 	if err != nil {
@@ -93,7 +97,10 @@ func TagImage(ctx context.Context, apiclient *client.Client, source string, targ
 		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
-	fmt.Print("Image TAG Result", imageResult)
+	slog.Info(
+		"Image TAG Result",
+		"result", imageResult,
+	)
 	return nil
 }
 
@@ -116,7 +123,10 @@ func RemoveImage(ctx context.Context, apiclient *client.Client, target string) e
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
 
-	fmt.Print("Image Remove Result", responses)
+	slog.Info(
+		"Image Remove Result",
+		"responses", responses,
+	)
 
 	return nil
 }

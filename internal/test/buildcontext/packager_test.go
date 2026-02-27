@@ -4,8 +4,8 @@ import (
 	"archive/tar"
 	"bytes"
 	"encoding/json"
-	"faas-engine-go/internal/api"
 	"faas-engine-go/internal/buildcontext"
+	"faas-engine-go/internal/types"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -77,9 +77,14 @@ func TestPackageFunction_InvalidPath(t *testing.T) {
 	}
 }
 
-func TestCreateTarStream_IncludesDockerfile(t *testing.T) {
+func TestCreateTarStream_IncludesDockerfile_WhenMissing(t *testing.T) {
+	tempDir := t.TempDir()
 
-	tempDir := createTempFunctionDir(t)
+	// Create a sample file
+	filePath := filepath.Join(tempDir, "hello.txt")
+	if err := os.WriteFile(filePath, []byte("hello world"), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	reader, err := buildcontext.CreateTarStream(tempDir)
 	if err != nil {
@@ -104,43 +109,80 @@ func TestCreateTarStream_IncludesDockerfile(t *testing.T) {
 
 		case "hello.txt":
 			foundFile = true
-
-			data, err := io.ReadAll(tr)
-			if err != nil {
-				t.Fatal(err)
-			}
-
+			data, _ := io.ReadAll(tr)
 			if string(data) != "hello world" {
 				t.Fatalf("expected 'hello world', got '%s'", string(data))
 			}
 
 		case "Dockerfile":
 			foundDockerfile = true
+			data, _ := io.ReadAll(tr)
 
-			data, err := io.ReadAll(tr)
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			expected := "FROM localhost:5000/runtimes/node:v1\nCOPY . /function\n"
+			expected := "FROM localhost:5000/runtimes/node:v1\nWORKDIR /function\nCOPY . .\n"
 			if string(data) != expected {
-				t.Fatalf("unexpected Dockerfile content")
+				t.Fatalf("unexpected Dockerfile content:\nexpected:\n%s\ngot:\n%s",
+					expected, string(data))
 			}
 		}
 	}
 
 	if !foundFile {
-		t.Fatal("file not found inside tar")
+		t.Fatal("hello.txt not found inside tar")
 	}
 
 	if !foundDockerfile {
-		t.Fatal("Dockerfile not found inside tar")
+		t.Fatal("Dockerfile was not injected")
+	}
+}
+
+func TestCreateTarStream_DoesNotOverrideExistingDockerfile(t *testing.T) {
+	tempDir := t.TempDir()
+
+	// Create existing Dockerfile
+	existingContent := "FROM alpine\nCMD echo hello\n"
+	dockerfilePath := filepath.Join(tempDir, "Dockerfile")
+	if err := os.WriteFile(dockerfilePath, []byte(existingContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	reader, err := buildcontext.CreateTarStream(tempDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	tr := tar.NewReader(reader)
+
+	foundDockerfile := false
+
+	for {
+		header, err := tr.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("error reading tar: %v", err)
+		}
+
+		if header.Name == "Dockerfile" {
+			foundDockerfile = true
+
+			data, _ := io.ReadAll(tr)
+
+			if string(data) != existingContent {
+				t.Fatalf("Dockerfile was overridden.\nexpected:\n%s\ngot:\n%s",
+					existingContent, string(data))
+			}
+		}
+	}
+
+	if !foundDockerfile {
+		t.Fatal("Dockerfile not found in tar")
 	}
 }
 
 func TestSendTarStream_Success(t *testing.T) {
 
-	mockResponse := api.DeployResponse{
+	mockResponse := types.DeployResponse{
 		Message: "deploy successful",
 	}
 

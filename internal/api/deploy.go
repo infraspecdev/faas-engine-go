@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,10 +11,6 @@ import (
 
 type Deployer interface {
 	Deploy(ctx context.Context, name string, file io.Reader) error
-}
-
-type DeployResponse struct {
-	Message string `json:"message"`
 }
 
 func DeployHandler(deployer Deployer) http.HandlerFunc {
@@ -54,7 +51,7 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			return
 		}
 
-		writeJSON(w, http.StatusOK, DeployResponse{
+		writeJSON(w, http.StatusOK, types.DeployResponse{
 			Message: fmt.Sprintf("Deployed '%s' successfully", name),
 		})
 	}
