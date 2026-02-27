@@ -6,6 +6,7 @@ package cmd
 import (
 	"faas-engine-go/internal/buildcontext"
 	"fmt"
+	"log"
 	"log/slog"
 	"path/filepath"
 
@@ -50,6 +51,10 @@ func init() {
 	deployCmd.Flags().StringVar(&filePath, "file", "", "Path to the function code directory")
 	deployCmd.Flags().StringVar(&functionName, "function-name", "", "Name of the function to deploy")
 
-	deployCmd.MarkFlagRequired("file")
-	deployCmd.MarkFlagRequired("function-name")
+	if err := deployCmd.MarkFlagRequired("file"); err != nil {
+		log.Fatalf("failed to mark flag as required: %v", err)
+	}
+	if err := deployCmd.MarkFlagRequired("function-name"); err != nil {
+		log.Fatalf("failed to mark flag as required: %v", err)
+	}
 }

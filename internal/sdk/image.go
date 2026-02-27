@@ -19,7 +19,9 @@ func PullImage(ctx context.Context, apiclient *client.Client, imageName string) 
 
 	defer imageRef.Close()
 	slog.Info("Pulling image....")
-	io.Copy(io.Discard, imageRef)
+	if _, err := io.Copy(io.Discard, imageRef); err != nil {
+		return fmt.Errorf("failed to copy image data: %w", err)
+	}
 	return nil
 }
 
@@ -110,7 +112,9 @@ func PushImage(ctx context.Context, apiclient *client.Client, target string) err
 		return fmt.Errorf("failed to push image: %w", err)
 	}
 	defer imagePush.Close()
-	io.Copy(io.Discard, imagePush)
+	if _, err := io.Copy(io.Discard, imagePush); err != nil {
+		return fmt.Errorf("failed to read push output: %w", err)
+	}
 	return nil
 }
 

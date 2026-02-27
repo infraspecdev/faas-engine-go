@@ -6,6 +6,7 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -73,6 +74,11 @@ func init() {
 	invokeCmd.Flags().StringVar(&functionName, "name", "", "Name of the function to invoke")
 	invokeCmd.Flags().StringVar(&data, "data", "", "Data to pass to the function as input")
 
-	invokeCmd.MarkFlagRequired("name")
-	invokeCmd.MarkFlagRequired("data")
+	if err := invokeCmd.MarkFlagRequired("name"); err != nil {
+		log.Fatalf("failed to mark 'name' flag as required: %v", err)
+	}
+
+	if err := invokeCmd.MarkFlagRequired("data"); err != nil {
+		log.Fatalf("failed to mark 'data' flag as required: %v", err)
+	}
 }

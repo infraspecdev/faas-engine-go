@@ -46,7 +46,9 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	}
 
 	port, err := network.ParsePort("8080/tcp")
-
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse port: %w", err)
+	}
 	var hostPort string
 
 	deadline := time.Now().Add(10 * time.Second)

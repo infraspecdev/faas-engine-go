@@ -6,6 +6,7 @@ import (
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/service"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/gorilla/mux"
@@ -32,9 +33,10 @@ func main() {
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
 
-	http.ListenAndServe(":8080", r)
+	if err = http.ListenAndServe(":8080", r); err != nil {
+		log.Fatalf("server failed: %v", err)
+	}
 }
-
 func HomeHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Welcome to the Runtime Manager!")
 }
