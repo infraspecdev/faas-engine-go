@@ -70,9 +70,9 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	for time.Now().Before(healthDeadline) {
 		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
-		// fmt.Println("container id:", containerId)
-		// fmt.Println("Container Health Status:", inspect.Container.State.Health.Status)
-		// fmt.Println("container state:", inspect.Container.State.Health.Log)
+		fmt.Println("container id:", containerId)
+		fmt.Println("Container Health Status:", inspect.Container.State.Health.Status)
+		fmt.Println("container state:", inspect.Container.State.Health.Log)
 		if err == nil &&
 			inspect.Container.State != nil &&
 			inspect.Container.State.Health != nil &&
