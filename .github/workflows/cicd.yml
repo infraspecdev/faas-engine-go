@@ -1,4 +1,4 @@
-name: CI workflow
+name: CICD workflow
 
 on:
   push:
@@ -152,7 +152,7 @@ jobs:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/runtime-manager"
+          source: "./artifacts/runtime-manager-binary"
           target: "/tmp"
           strip_components: 1
 
