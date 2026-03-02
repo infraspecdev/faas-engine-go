@@ -153,7 +153,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
-          target: "/tmp"
+          target: "/tmp/runtime-manager"
+          strip_components: 1
 
       - name: Copy service file to server
         uses: appleboy/scp-action@v0.1.7
@@ -162,7 +163,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
-          target: "/tmp"
+          target: "/tmp/faas-engine.service"
+          strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1
