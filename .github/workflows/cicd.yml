@@ -153,7 +153,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
-          target: "/tmp/runtime-manager"
+          target: "/tmp"
           strip_components: 1
 
       - name: Copy service file to server
@@ -163,7 +163,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
-          target: "/tmp/faas-engine.service"
+          target: "/tmp"
           strip_components: 1
 
       - name: Deploy and restart service
