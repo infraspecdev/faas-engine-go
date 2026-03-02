@@ -173,7 +173,13 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             echo "=== Starting Deployment ==="
+
+            echo "=== DEBUG: /tmp contents ==="
+            ls -l /tmp
+            echo "=== DEBUG: recursive /tmp ==="
+            ls -R /tmp || true
 
             sudo systemctl stop faas-engine || true
 
