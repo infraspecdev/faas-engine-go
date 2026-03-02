@@ -119,7 +119,7 @@ jobs:
           endpoint: ${{ secrets.WG_SERVER_ENDPOINT }}
           endpoint_public_key: ${{ secrets.WG_SERVER_PUBLIC_KEY }}
           private_key: ${{ secrets.WG_PRIVATE_KEY }}
-          ips: "${{ vars.VPN_CLIENT_IP }}/24"
+          ips: "${{ vars.VPN_CLIENT_IP }}/32"
           allowed_ips: "${{ vars.TARGET_PRIVATE_IP }}/32"
 
       - name: Verify wireguard connection
