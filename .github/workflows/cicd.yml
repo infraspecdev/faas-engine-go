@@ -122,6 +122,10 @@ jobs:
           ips: "${{ vars.VPN_CLIENT_IP }}/32"
           allowed_ips: "${{ vars.TARGET_PRIVATE_IP }}/32"
 
+      - name: Debug WireGuard connection
+        run: |
+          echo "VPN_CLIENT_IP is: ${{ vars.VPN_CLIENT_IP }}"
+
       - name: Verify wireguard connection
         run: |
           echo "==== WireGuard Status ===="
