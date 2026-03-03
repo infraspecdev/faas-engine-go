@@ -21,14 +21,18 @@ func GreetHandler(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(response{
+		if err := json.NewEncoder(w).Encode(response{
 			Message: "Missing 'name' query parameter",
-		})
+		}); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(response{
+	if err := json.NewEncoder(w).Encode(response{
 		Message: fmt.Sprintf("Hello, %s!", name),
-	})
+	}); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
