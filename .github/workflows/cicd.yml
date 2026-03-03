@@ -181,37 +181,57 @@ jobs:
 
             echo "=== DEBUG: /tmp contents ==="
             ls -l /tmp
-            echo "=== DEBUG: recursive /tmp ==="
-            ls -R /tmp || true
 
+            echo "=== Stopping existing service ==="
             sudo systemctl stop faas-engine || true
 
-            # Ensure directory exists
+            # Ensure required directories exist
             sudo mkdir -p /opt/faas-engine
+            sudo mkdir -p /backup/bin
+            sudo mkdir -p /backup/services
 
-            # Backup old binary
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+            echo "=== Backing up existing binary if present ==="
             if [ -f /opt/faas-engine/runtime-manager ]; then
               sudo cp /opt/faas-engine/runtime-manager \
-                /opt/faas-engine/runtime-manager.backup.$(date +%Y%m%d-%H%M%S)
+                /backup/bin/runtime-manager.$TIMESTAMP
+              echo "Binary backup created"
+            else
+              echo "No existing binary to back up"
             fi
 
-            # Move new binary
-            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
+            echo "=== Backing up existing service file if present ==="
+            if [ -f /etc/systemd/system/faas-engine.service ]; then
+              sudo cp /etc/systemd/system/faas-engine.service \
+                /backup/services/faas-engine.service.$TIMESTAMP
+              echo "Service backup created"
+            else
+              echo "No existing service file to back up"
+            fi
+
+            echo "=== Cleaning old runtime-manager completely ==="
+            sudo rm -rf /opt/faas-engine/runtime-manager
+
+            echo "=== Deploying new binary ==="
+            sudo mv /tmp/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
 
-            # Install service file
-            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
+            echo "=== Deploying new service file ==="
+            sudo mv /tmp/faas-engine.service /etc/systemd/system/faas-engine.service
 
+            echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
+
+            echo "=== Starting service ==="
             sudo systemctl restart faas-engine
 
             echo "=== Checking Service Status ==="
-
-            if sudo systemctl is-active --quiet faas-engine; then
-              echo "Service is running successfully"
-            else
+            if ! sudo systemctl is-active --quiet faas-engine; then
               echo "Service failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
               exit 1
             fi
+
+            echo "Service deployed successfully"
