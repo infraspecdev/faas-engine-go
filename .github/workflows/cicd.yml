@@ -196,11 +196,11 @@ jobs:
             fi
 
             # Move new binary
-            sudo mv /tmp/runtime-manager /opt/faas-engine/runtime-manager
+            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
 
             # Install service file
-            sudo mv /tmp/faas-engine.service /etc/systemd/system/faas-engine.service
+            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
 
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
