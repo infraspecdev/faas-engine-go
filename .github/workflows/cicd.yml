@@ -86,8 +86,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          path: ./bin/runtime-manager
           name: runtime-manager-binary
+          path: ./bin/runtime-manager
 
       - name: Upload service artifact
         uses: actions/upload-artifact@v4
@@ -122,10 +122,6 @@ jobs:
           ips: "${{ vars.VPN_CLIENT_IP }}/32"
           allowed_ips: "${{ vars.TARGET_PRIVATE_IP }}/32"
 
-      - name: Debug WireGuard connection
-        run: |
-          echo "VPN_CLIENT_IP is: ${{ vars.VPN_CLIENT_IP }}"
-
       - name: Verify wireguard connection
         run: |
           echo "==== WireGuard Status ===="
@@ -146,13 +142,20 @@ jobs:
             whoami
             hostname
 
+      - name: Debug artifacts before SCP
+        run: |
+          echo "=== Workspace ==="
+          ls -la
+          echo "=== Artifacts ==="
+          ls -la artifacts
+
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/runtime-manager-binary"
+          source: "./artifacts/runtime-manager"
           target: "/tmp"
           strip_components: 1
 
