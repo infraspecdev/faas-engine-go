@@ -2,8 +2,10 @@ package service
 
 import (
 	"context"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/moby/moby/api/types/network"
@@ -12,6 +14,9 @@ import (
 
 type FunctionInvoker struct{}
 
+// Invoke invokes a function by creating and starting a container from the function's image.
+// It waits for the container to become healthy before sending the invocation request.
+// The container is cleaned up asynchronously after invocation.
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte) (any, error) {
 
 	ctx, cli, cancel, err := sdk.Init(ctx)
@@ -20,40 +25,57 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	}
 	defer cancel()
 
-	target := "localhost:5000/functions/" + functionName
+	target := config.ImageRef(config.FunctionsRepo, functionName, "")
+
+	slog.Info("container_lifecycle", "stage", "pulling", "function", functionName)
 
 	if err := sdk.PullImage(ctx, cli, target); err != nil {
+		slog.Error("image_pull_failed", "function", functionName, "error", err)
 		return nil, err
 	}
 
 	containerId, err := sdk.CreateContainer(ctx, cli, functionName, target, nil)
 	if err != nil {
+		slog.Error("container_create_failed", "function", functionName, "error", err)
 		return nil, err
 	}
 
+	logger := slog.With("container_id", containerId, "function", functionName)
+
+	logger.Info("container_lifecycle", "stage", "created")
+
 	defer func() {
 		go func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), config.CleanUpTimeout)
 			defer cancel()
+
+			logger.Info("container_lifecycle", "stage", "stopping")
+
 			if err := sdk.StopContainer(cleanupCtx, cli, containerId); err != nil {
-				fmt.Println("Error stopping container:", err)
+				logger.Error("container_stop_failed", "error", err)
+			} else {
+				logger.Info("container_lifecycle", "stage", "stopped")
 			}
 		}()
 	}()
 
 	if err := sdk.StartContainer(ctx, cli, containerId); err != nil {
+		logger.Error("container_start_failed", "error", err)
 		return nil, err
 	}
 
-	port, err := network.ParsePort("8080/tcp")
+	logger.Info("container_lifecycle", "stage", "starting")
+
+	// Wait for port binding
+	port, err := network.ParsePort(config.ContainerPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse port: %w", err)
 	}
+
 	var hostPort string
+	portDeadline := time.Now().Add(config.PortTimeout)
 
-	deadline := time.Now().Add(10 * time.Second)
-
-	for time.Now().Before(deadline) {
+	for time.Now().Before(portDeadline) {
 		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
 
 		if err == nil && inspect.Container.NetworkSettings != nil {
@@ -63,28 +85,39 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 				break
 			}
 		}
+
+		time.Sleep(200 * time.Millisecond)
 	}
 
-	healthDeadline := time.Now().Add(10 * time.Second)
+	// Wait for healthy
+	healthDeadline := time.Now().Add(config.HealthTimeout)
 	healthy := false
 
 	for time.Now().Before(healthDeadline) {
 		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
-		fmt.Println("container id:", containerId)
-		fmt.Println("Container Health Status:", inspect.Container.State.Health.Status)
-		fmt.Println("container state:", inspect.Container.State.Health.Log)
+
 		if err == nil &&
 			inspect.Container.State != nil &&
 			inspect.Container.State.Health != nil &&
 			inspect.Container.State.Health.Status == "healthy" {
+
 			healthy = true
 			break
 		}
+
+		time.Sleep(300 * time.Millisecond)
 	}
 
 	if !healthy {
+		logger.Error("container_unhealthy",
+			"timeout", config.HealthTimeout,
+		)
 		return nil, fmt.Errorf("container did not become healthy in time")
 	}
+
+	logger.Info("container_lifecycle", "stage", "healthy")
+
+	logger.Info("container_lifecycle", "stage", "invoking")
 
 	return sdk.InvokeContainer(ctx, hostPort, payload)
 }

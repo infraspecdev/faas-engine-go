@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"faas-engine-go/internal/config"
 	"net/http"
 	"net/netip"
 
@@ -13,15 +14,18 @@ import (
 	"io"
 	"log/slog"
 	"slices"
-	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
 
+// Init initializes a Docker API client with a bounded context.
+// It creates a child context with a timeout and returns
+// the context, Docker client, and cancel function.
+// The caller must defer the returned cancel function to avoid leaks.
 func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
-	ctx, cancel := context.WithTimeout(parent, 120*time.Second)
+	ctx, cancel := context.WithTimeout(parent, config.InitTimeout)
 
 	apiclient, err := client.New(
 		client.FromEnv,
@@ -55,8 +59,11 @@ func Init(parent context.Context) (context.Context, *client.Client, context.Canc
 // 	fmt.Println(string(b))
 // }
 
+// CreateContainer creates a Docker container from the given image.
+// If a container with the same name already exists, it returns the existing container ID.
+// The container is configured with port 8080 exposed and automatically removed on stop.
+// Returns the container ID on success.
 func CreateContainer(ctx context.Context, apiclient *client.Client, containerName string, imageName string, command []string) (string, error) {
-	// Create a container from the image
 	out, err := apiclient.ContainerList(ctx, client.ContainerListOptions{
 		All: true,
 	})
@@ -82,17 +89,7 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 		}
 	}
 
-	// cont, err := apiclient.ContainerCreate(ctx, client.ContainerCreateOptions{
-	// 	Image: imageName,
-	// 	Name:  containerName,
-	// 	Config: &container.Config{
-	// 		Cmd:  command,
-	// 		Tty:  false,
-	// 		User: "1000:1000",
-	// 	},
-	// })
-
-	containerPort, err := network.ParsePort("8080/tcp")
+	containerPort, err := network.ParsePort(config.ContainerPort)
 
 	if err != nil {
 		return "", fmt.Errorf("failed to parse port: %w", err)
@@ -102,7 +99,7 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 		Config: &container.Config{
 			Image: imageName,
 			Tty:   false,
-			User:  "1000:1000",
+			User:  config.ContainerUser,
 			ExposedPorts: network.PortSet{
 				containerPort: struct{}{},
 			},
@@ -127,30 +124,26 @@ func CreateContainer(ctx context.Context, apiclient *client.Client, containerNam
 		return "", fmt.Errorf("failed to create container: %w", err)
 	}
 
-	slog.Info("container created",
-		"id", cont.ID,
-		"container_name", containerName,
-		"image", imageName,
-	)
-
 	return cont.ID, nil
 
 }
 
+// StartContainer starts a previously created Docker container.
+// It returns an error if the container fails to start
 func StartContainer(ctx context.Context, apiclient *client.Client, containerID string) error {
-	// Start the container
 	_, err := apiclient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to start container: %w", err)
 	}
 
-	slog.Info("container started", "id", containerID)
 	return nil
 }
 
+// StopContainer gracefully stops a running Docker container.
+// It sends a stop signal and waits up to 10 seconds before force termination.
+// Returns an error if the container cannot be stopped.
 func StopContainer(ctx context.Context, apiclient *client.Client, containerID string) error {
-	// Stop the container
-	timeout := 10
+	timeout := int(config.ContainerStopTimeout.Seconds())
 	_, err := apiclient.ContainerStop(ctx, containerID, client.ContainerStopOptions{
 		Timeout: &timeout,
 	})
@@ -158,10 +151,11 @@ func StopContainer(ctx context.Context, apiclient *client.Client, containerID st
 		return fmt.Errorf("failed to stop container: %w", err)
 	}
 
-	slog.Info("container stopped", "id", containerID)
 	return nil
 }
 
+// DeleteContainer removes a stopped Docker container.
+// It does not force removal and returns an error if deletion fails.
 func DeleteContainer(ctx context.Context, cli *client.Client, containerID string) error {
 	_, err := cli.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
 		Force: false,
@@ -175,8 +169,10 @@ func DeleteContainer(ctx context.Context, cli *client.Client, containerID string
 	return nil
 }
 
+// StatsContainer retrieves resource usage statistics for a container.
+// It returns the raw JSON stats payload as a byte slice.
+// The stats stream is non-continuous (Stream=false).
 func StatsContainer(ctx context.Context, apiclient *client.Client, containerID string) ([]byte, error) {
-	// Get container stats
 	stats, err := apiclient.ContainerStats(ctx, containerID, client.ContainerStatsOptions{
 		Stream: false,
 	})
@@ -198,6 +194,8 @@ func StatsContainer(ctx context.Context, apiclient *client.Client, containerID s
 	return buf.Bytes(), nil
 }
 
+// LogContainer retrieves combined stdout and stderr logs from a container.
+// It decodes Docker's multiplexed log stream format and returns plain text logs.
 func LogContainer(ctx context.Context, cli *client.Client, containerID string) (string, error) {
 	out, err := cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
@@ -244,6 +242,8 @@ func LogContainer(ctx context.Context, cli *client.Client, containerID string) (
 	return result.String(), nil
 }
 
+// WaitContainer blocks until the specified container stops.
+// It returns the container's exit status code or an error if waiting fails.
 func WaitContainer(ctx context.Context, cli *client.Client, containerID string) (int64, error) {
 	statusCh := cli.ContainerWait(ctx, containerID, client.ContainerWaitOptions{})
 	select {
@@ -254,8 +254,11 @@ func WaitContainer(ctx context.Context, cli *client.Client, containerID string) 
 	}
 }
 
+// InvokeContainer sends an HTTP POST request to the running container instance.
+// It forwards the provided JSON payload and expects a JSON response.
+// Returns a decoded JSON map or an error if the request fails or the container
+// returns a non-200 status.
 func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
-	fmt.Println("body in invoke container:", string(body))
 
 	url := fmt.Sprintf("http://localhost:%s/", hostPort)
 
@@ -267,7 +270,7 @@ func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[str
 	req.Header.Set("Content-Type", "application/json")
 
 	httpClient := &http.Client{
-		Timeout: 10 * time.Second,
+		Timeout: config.InvokeHTTPTimeout,
 	}
 
 	resp, err := httpClient.Do(req)

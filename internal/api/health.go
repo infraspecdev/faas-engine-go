@@ -6,10 +6,13 @@ import (
 	"net/http"
 )
 
+// HealthHandler returns "OK" to indicate the service is running.
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "OK")
 }
 
+// GreetHandler returns a JSON greeting message.
+// Requires a "name" query parameter.
 func GreetHandler(w http.ResponseWriter, r *http.Request) {
 	name := r.URL.Query().Get("name")
 

@@ -9,6 +9,8 @@ type GetFunctionResponse struct {
 	Message string `json:"message"`
 }
 
+// GreetHandler returns a JSON greeting message.
+// Requires a "name" query parameter.
 func GetFunctionsHandler(w http.ResponseWriter, r *http.Request) {
 	response := GetFunctionResponse{
 		Message: "Hello world (still working)",

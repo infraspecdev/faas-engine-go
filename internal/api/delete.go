@@ -9,6 +9,8 @@ type DeleteResponse struct {
 	Message string `json:"message"`
 }
 
+// DeleteFunctionHandler handles HTTP requests for deleting a function.
+// Currently returns a placeholder success response.
 func DeleteFunctionHandler(w http.ResponseWriter, r *http.Request) {
 	response := DeleteResponse{
 		Message: "Function Deleted (still working)",

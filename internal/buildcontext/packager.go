@@ -3,6 +3,7 @@ package buildcontext
 import (
 	"archive/tar"
 	"encoding/json"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
@@ -83,12 +84,15 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 		// Inject Dockerfile only if not present
 		if !dockerfileExists {
 			slog.Info("No Dockerfile found, injecting default Dockerfile into build context")
-			baseImage := "localhost:5000/runtimes/node:v1" // should make it configurable
+
+			baseImage := config.ImageRef(config.RuntimesRepo, "node", "v1")
 
 			dockerfile := fmt.Sprintf(
 				"FROM %s\nCOPY . /function\n",
 				baseImage,
 			)
+
+			slog.Info("Using registry", "value", config.Registry())
 
 			dfBytes := []byte(dockerfile)
 

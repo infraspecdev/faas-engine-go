@@ -2,6 +2,7 @@ package test
 
 import (
 	"faas-engine-go/internal/buildcontext"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
 	"fmt"
 	"testing"
@@ -211,5 +212,38 @@ func TestRemoveImage_NonExistent(t *testing.T) {
 	err := sdk.RemoveImage(ctx, cli, "nonexistent:image")
 	if err == nil {
 		t.Fatal("expected error removing non-existent image, got nil")
+	}
+}
+
+func TestTagImage_InvalidTarget(t *testing.T) {
+	ctx, cli, cancel := setupDocker(t)
+	defer cancel()
+
+	err := sdk.PullImage(ctx, cli, "alpine:latest")
+	if err != nil {
+		t.Fatalf("failed to pull alpine image: %v", err)
+	}
+
+	err = sdk.TagImage(ctx, cli, "alpine:latest", "INVALID IMAGE NAME")
+	if err == nil {
+		t.Fatal("expected error for invalid target image, got nil")
+	}
+}
+
+func TestPushImage_Success(t *testing.T) {
+	ctx, cli, cancel := setupDocker(t)
+	defer cancel()
+
+	if err := sdk.PullImage(ctx, cli, "alpine"); err != nil {
+		t.Fatalf("failed to pull alpine image: %v", err)
+	}
+
+	target := config.ImageRef(config.FunctionsRepo, "alpine", "testpush")
+	if err := sdk.TagImage(ctx, cli, "alpine:latest", target); err != nil {
+		t.Fatalf("failed to tag image: %v", err)
+	}
+
+	if err := sdk.PushImage(ctx, cli, target); err != nil {
+		t.Fatalf("failed to push image: %v", err)
 	}
 }

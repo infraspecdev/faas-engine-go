@@ -4,13 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log/slog"
 	"os"
 	"strings"
 
 	"github.com/moby/moby/client"
 )
 
+// PullImage pulls a Docker image from a registry.
+// It consumes the entire response stream to ensure the pull completes successfully.
+// Returns an error if the pull operation fails.
 func PullImage(ctx context.Context, apiclient *client.Client, imageName string) error {
 	imageRef, err := apiclient.ImagePull(ctx, imageName, client.ImagePullOptions{})
 	if err != nil {
@@ -18,20 +20,20 @@ func PullImage(ctx context.Context, apiclient *client.Client, imageName string) 
 	}
 
 	defer imageRef.Close()
-	slog.Info("Pulling image....")
 	if _, err := io.Copy(io.Discard, imageRef); err != nil {
 		return fmt.Errorf("failed to copy image data: %w", err)
 	}
 	return nil
 }
 
+// BuildImage builds a Docker image using the provided tar build context.
+// It validates that the image if name does not already exist before building.
 func BuildImage(ctx context.Context, apiclient *client.Client, imageName string, tarfile io.Reader) error {
 
 	err := CheckImageName(ctx, apiclient, imageName)
 	if err != nil {
 		return fmt.Errorf("failed to check image name: %w", err)
 	}
-	slog.Info("Image name check result", "result", "image name is available")
 
 	image, err := apiclient.ImageBuild(ctx, tarfile, client.ImageBuildOptions{
 		Tags:        []string{imageName},
@@ -55,10 +57,11 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 		return err
 	}
 
-	slog.Info("Image built successfully", "image_name", imageName)
 	return nil
 }
 
+// CheckImageName verifies that the given image name does not already exist locally.
+// Returns an error if a conflicting image name is found.
 func CheckImageName(ctx context.Context, apiclient *client.Client, imageName string) error {
 	images, err := apiclient.ImageList(ctx, client.ImageListOptions{
 		All: true,
@@ -88,9 +91,11 @@ func CheckImageName(ctx context.Context, apiclient *client.Client, imageName str
 	return nil
 }
 
+// TagImage creates a new tag for an existing Docker image.
+// The source image must exist locally.
+// Returns an error if tagging fails.
 func TagImage(ctx context.Context, apiclient *client.Client, source string, target string) error {
-	// localhost:5000/source:latest
-	imageResult, err := apiclient.ImageTag(ctx, client.ImageTagOptions{
+	_, err := apiclient.ImageTag(ctx, client.ImageTagOptions{
 		Source: source,
 		Target: target,
 	})
@@ -99,13 +104,11 @@ func TagImage(ctx context.Context, apiclient *client.Client, source string, targ
 		return fmt.Errorf("failed to tag image: %w", err)
 	}
 
-	slog.Info(
-		"Image TAG Result",
-		"result", imageResult,
-	)
 	return nil
 }
 
+// PushImage pushes a tagged Docker image to its configured registry.
+// Returns an error if the push fails.
 func PushImage(ctx context.Context, apiclient *client.Client, target string) error {
 	imagePush, err := apiclient.ImagePush(ctx, target, client.ImagePushOptions{})
 	if err != nil {
@@ -118,19 +121,16 @@ func PushImage(ctx context.Context, apiclient *client.Client, target string) err
 	return nil
 }
 
+// RemoveImage removes a local Docker image by reference.
+// It does not force removal and will fail if the image is in use.
 func RemoveImage(ctx context.Context, apiclient *client.Client, target string) error {
-	responses, err := apiclient.ImageRemove(ctx, target, client.ImageRemoveOptions{
+	_, err := apiclient.ImageRemove(ctx, target, client.ImageRemoveOptions{
 		Force:         false,
 		PruneChildren: false,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to remove image: %w", err)
 	}
-
-	slog.Info(
-		"Image Remove Result",
-		"responses", responses,
-	)
 
 	return nil
 }

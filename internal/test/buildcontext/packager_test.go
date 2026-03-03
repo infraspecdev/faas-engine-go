@@ -5,7 +5,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"faas-engine-go/internal/buildcontext"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/types"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -118,7 +120,10 @@ func TestCreateTarStream_IncludesDockerfile_WhenMissing(t *testing.T) {
 			foundDockerfile = true
 			data, _ := io.ReadAll(tr)
 
-			expected := "FROM localhost:5000/runtimes/node:v1\nCOPY . /function\n"
+			target := config.ImageRef(config.RuntimesRepo, "node", "v1")
+
+			expected := fmt.Sprintf("FROM %s\nCOPY . /function\n", target)
+
 			if string(data) != expected {
 				t.Fatalf("unexpected Dockerfile content:\nexpected:\n%s\ngot:\n%s",
 					expected, string(data))
