@@ -1,44 +1,66 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"faas-engine-go/internal/types"
+	"fmt"
+	"io"
 	"net/http"
 )
 
-type DeployResponse struct {
-	Message string `json:"message"`
+type Deployer interface {
+	Deploy(ctx context.Context, name string, file io.Reader) error
 }
 
-func DeployHandler(w http.ResponseWriter, r *http.Request) {
-	r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
+func DeployHandler(deployer Deployer) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 
-	resp := DeployResponse{}
+		r.Body = http.MaxBytesReader(w, r.Body, 50<<20)
 
-	if err := r.ParseMultipartForm(50 << 20); err != nil {
-		http.Error(w, "Invalid File Size", http.StatusBadRequest)
-		return
+		if err := r.ParseMultipartForm(50 << 20); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "file too large",
+			})
+			return
+		}
+
+		file, _, err := r.FormFile("file")
+		if err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "missing 'file' field",
+			})
+			return
+		}
+		defer file.Close()
+
+		name := r.FormValue("name")
+		if name == "" {
+			writeJSON(w, http.StatusBadRequest, map[string]string{
+				"error": "missing function name",
+			})
+			return
+		}
+
+		ctx := context.Background()
+
+		if err := deployer.Deploy(ctx, name, file); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{
+				"error": err.Error(),
+			})
+			return
+		}
+
+		writeJSON(w, http.StatusOK, types.DeployResponse{
+			Message: fmt.Sprintf("Deployed '%s' successfully", name),
+		})
 	}
+}
 
-	file, _, err := r.FormFile("file")
-
-	if err != nil {
-		http.Error(w, "missing 'file' form field", http.StatusBadRequest)
-		return
+func writeJSON(w http.ResponseWriter, status int, payload any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
-
-	defer file.Close()
-
-	// , err := io.ReadAll(file)
-	// if err != nil {
-	// 	http.Error(w, "failed to read file", http.StatusInternalServerError)
-	// 	return
-	// }
-
-	// fmt.Print(string(data))
-
-	resp.Message = "File received successfully"
-
-	w.Header().Set("Content-type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(resp)
 }
