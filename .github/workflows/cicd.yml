@@ -64,7 +64,6 @@ jobs:
       - name: Verify registry is running
         run: |
           curl http://localhost:5000/v2/_catalog || true
-
       - name: Run tests
         env:
           REGISTRY_URL: localhost:5000
@@ -95,7 +94,6 @@ jobs:
         run: |
           mkdir -p ./bin
           go build -o ./bin/runtime-manager ./cmd/runtime-manager/.
-
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
@@ -146,7 +144,6 @@ jobs:
           ip route
           echo "==== Runner ip ===="
           ip addr show
-
       - name: Test SSH over VPN
         uses: appleboy/ssh-action@v1
         with:
@@ -157,22 +154,29 @@ jobs:
             echo "Connected to server"
             whoami
             hostname
-
       - name: Debug artifacts before SCP
         run: |
           echo "=== Workspace ==="  
           ls -la
           echo "=== Artifacts ==="
           ls -la artifacts
-
+      - name: Prepare deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo mkdir -p /opt/faas-engine
+            sudo chown -R $USER:$USER /opt/faas-engine
       - name: Copy runtimes to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "runtimes/*"
-          target: "/opt/faas-engine/runtimes/"
+          source: "./runtimes/"
+          target: "/opt/faas-engine/"
 
       - name: Build runtime images on EC2
         uses: appleboy/ssh-action@v1
@@ -182,17 +186,12 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             echo "Building runtime images..."
-
             cd /opt/faas-engine/runtimes
-
             docker build -t localhost:5000/runtimes/node:v1 node-runtime
             docker build -t localhost:5000/runtimes/python:v1 python-runtime
-
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
-
             echo "Runtime images built and pushed to local registry"
-
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -222,20 +221,15 @@ jobs:
           script: |
             set -e
             echo "=== Starting Deployment ==="
-
             echo "=== DEBUG: /tmp contents ==="
             ls -l /tmp
-
             echo "=== Stopping existing service ==="
             sudo systemctl stop faas-engine || true
-
             # Ensure required directories exist
             sudo mkdir -p /opt/faas-engine
             sudo mkdir -p /backup/bin
             sudo mkdir -p /backup/services
-
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-
             echo "=== Backing up existing binary if present ==="
             if [ -f /opt/faas-engine/runtime-manager ]; then
               sudo cp /opt/faas-engine/runtime-manager \
@@ -244,7 +238,6 @@ jobs:
             else
               echo "No existing binary to back up"
             fi
-
             echo "=== Backing up existing service file if present ==="
             if [ -f /etc/systemd/system/faas-engine.service ]; then
               sudo cp /etc/systemd/system/faas-engine.service \
@@ -253,29 +246,22 @@ jobs:
             else
               echo "No existing service file to back up"
             fi
-
             echo "=== Cleaning old runtime-manager completely ==="
             sudo rm -rf /opt/faas-engine/runtime-manager
-
             echo "=== Deploying new binary ==="
             sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
-
             echo "=== Deploying new service file ==="
             sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
-
             echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
-
             echo "=== Starting service ==="
             sudo systemctl restart faas-engine
-
             echo "=== Checking Service Status ==="
             if ! sudo systemctl is-active --quiet faas-engine; then
               echo "Service failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
               exit 1
             fi
-
             echo "Service deployed successfully"
