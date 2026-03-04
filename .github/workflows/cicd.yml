@@ -171,8 +171,8 @@ jobs:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "runtimes/*"
-          target: "/opt/faas-engine/runtimes/"
+          source: "./runtimes/"
+          target: "/opt/faas-engine/"
 
       - name: Build runtime images on EC2
         uses: appleboy/ssh-action@v1
