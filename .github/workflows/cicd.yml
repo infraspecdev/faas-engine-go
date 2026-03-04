@@ -1,4 +1,4 @@
-name: CI workflow
+name: CICD workflow
 
 on:
   push:
@@ -39,6 +39,12 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
 
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -55,8 +61,15 @@ jobs:
       - name: Download dependencies
         run: go mod tidy
 
+      - name: Verify registry is running
+        run: |
+          curl http://localhost:5000/v2/_catalog || true
+
       - name: Run tests
+        env:
+          REGISTRY_URL: localhost:5000
         run: go test -v ./...
+
   build:
     name: Build Application
     runs-on: ubuntu-latest
@@ -86,8 +99,8 @@ jobs:
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          path: ./bin/runtime-manager
           name: runtime-manager-binary
+          path: ./bin/runtime-manager
 
       - name: Upload service artifact
         uses: actions/upload-artifact@v4
@@ -119,7 +132,7 @@ jobs:
           endpoint: ${{ secrets.WG_SERVER_ENDPOINT }}
           endpoint_public_key: ${{ secrets.WG_SERVER_PUBLIC_KEY }}
           private_key: ${{ secrets.WG_PRIVATE_KEY }}
-          ips: "${{ vars.VPN_CLIENT_IP }}/24"
+          ips: "${{ vars.VPN_CLIENT_IP }}/32"
           allowed_ips: "${{ vars.TARGET_PRIVATE_IP }}/32"
 
       - name: Verify wireguard connection
@@ -128,6 +141,8 @@ jobs:
           sudo wg
           echo "==== Routing Table ===="
           ip route
+          echo "==== Runner ip ===="
+          ip addr show
 
       - name: Test SSH over VPN
         uses: appleboy/ssh-action@v1
@@ -140,6 +155,13 @@ jobs:
             whoami
             hostname
 
+      - name: Debug artifacts before SCP
+        run: |
+          echo "=== Workspace ==="  
+          ls -la
+          echo "=== Artifacts ==="
+          ls -la artifacts
+
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -148,6 +170,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
           target: "/tmp"
+          # strip_components: 1
 
       - name: Copy service file to server
         uses: appleboy/scp-action@v0.1.7
@@ -157,6 +180,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
           target: "/tmp"
+          # strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1
@@ -165,36 +189,62 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            set -e
             echo "=== Starting Deployment ==="
 
+            echo "=== DEBUG: /tmp contents ==="
+            ls -l /tmp
+
+            echo "=== Stopping existing service ==="
             sudo systemctl stop faas-engine || true
 
-            # Ensure directory exists
+            # Ensure required directories exist
             sudo mkdir -p /opt/faas-engine
+            sudo mkdir -p /backup/bin
+            sudo mkdir -p /backup/services
 
-            # Backup old binary
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+            echo "=== Backing up existing binary if present ==="
             if [ -f /opt/faas-engine/runtime-manager ]; then
               sudo cp /opt/faas-engine/runtime-manager \
-                /opt/faas-engine/runtime-manager.backup.$(date +%Y%m%d-%H%M%S)
+                /backup/bin/runtime-manager.$TIMESTAMP
+              echo "Binary backup created"
+            else
+              echo "No existing binary to back up"
             fi
 
-            # Move new binary
-            sudo mv /tmp/runtime-manager /opt/faas-engine/runtime-manager
+            echo "=== Backing up existing service file if present ==="
+            if [ -f /etc/systemd/system/faas-engine.service ]; then
+              sudo cp /etc/systemd/system/faas-engine.service \
+                /backup/services/faas-engine.service.$TIMESTAMP
+              echo "Service backup created"
+            else
+              echo "No existing service file to back up"
+            fi
+
+            echo "=== Cleaning old runtime-manager completely ==="
+            sudo rm -rf /opt/faas-engine/runtime-manager
+
+            echo "=== Deploying new binary ==="
+            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
 
-            # Install service file
-            sudo mv /tmp/faas-engine.service /etc/systemd/system/faas-engine.service
+            echo "=== Deploying new service file ==="
+            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
 
+            echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
+
+            echo "=== Starting service ==="
             sudo systemctl restart faas-engine
 
             echo "=== Checking Service Status ==="
-
-            if sudo systemctl is-active --quiet faas-engine; then
-              echo "Service is running successfully"
-            else
+            if ! sudo systemctl is-active --quiet faas-engine; then
               echo "Service failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
               exit 1
             fi
+
+            echo "Service deployed successfully"
