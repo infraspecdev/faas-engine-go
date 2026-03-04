@@ -2,6 +2,9 @@ package sdk
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
+	"faas-engine-go/internal/config"
 	"fmt"
 	"io"
 	"os"
@@ -109,15 +112,34 @@ func TagImage(ctx context.Context, apiclient *client.Client, source string, targ
 
 // PushImage pushes a tagged Docker image to its configured registry.
 // Returns an error if the push fails.
-func PushImage(ctx context.Context, apiclient *client.Client, target string) error {
-	imagePush, err := apiclient.ImagePush(ctx, target, client.ImagePushOptions{})
+func PushImage(ctx context.Context, cli *client.Client, target string) error {
+
+	auth := map[string]string{
+		"username":      "",
+		"password":      "",
+		"serveraddress": config.Registry(),
+	}
+
+	authJSON, err := json.Marshal(auth)
+	if err != nil {
+		return fmt.Errorf("failed to marshal registry auth: %w", err)
+	}
+
+	encodedAuth := base64.StdEncoding.EncodeToString(authJSON)
+
+	imagePush, err := cli.ImagePush(ctx, target, client.ImagePushOptions{
+		RegistryAuth: encodedAuth,
+	})
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
+
 	defer imagePush.Close()
+
 	if _, err := io.Copy(io.Discard, imagePush); err != nil {
 		return fmt.Errorf("failed to read push output: %w", err)
 	}
+
 	return nil
 }
 
