@@ -144,6 +144,16 @@ jobs:
           echo "==== Runner ip ===="
           ip addr show
 
+      - name: Build runtime images
+        run: |
+          docker build -t ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/node:v1 ./runtimes/node-runtime
+          docker build -t ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/python:v1 ./runtimes/python-runtime
+
+      - name: Push runtime images
+        run: |
+          docker push ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/node:v1
+          docker push ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/python:v1
+
       - name: Test SSH over VPN
         uses: appleboy/ssh-action@v1
         with:
