@@ -144,7 +144,7 @@ jobs:
 
       - name: Debug artifacts before SCP
         run: |
-          echo "=== Workspace ==="
+          echo "=== Workspace ==="  
           ls -la
           echo "=== Artifacts ==="
           ls -la artifacts
@@ -157,7 +157,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
           target: "/tmp"
-          strip_components: 1
+          # strip_components: 1
 
       - name: Copy service file to server
         uses: appleboy/scp-action@v0.1.7
@@ -167,7 +167,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
           target: "/tmp"
-          strip_components: 1
+          # strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1
@@ -214,11 +214,11 @@ jobs:
             sudo rm -rf /opt/faas-engine/runtime-manager
 
             echo "=== Deploying new binary ==="
-            sudo mv /tmp/runtime-manager /opt/faas-engine/runtime-manager
+            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
 
             echo "=== Deploying new service file ==="
-            sudo mv /tmp/faas-engine.service /etc/systemd/system/faas-engine.service
+            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
 
             echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
