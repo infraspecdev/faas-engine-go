@@ -147,21 +147,6 @@ jobs:
           echo "==== Runner ip ===="
           ip addr show
 
-      - name: Allow insecure registry
-        run: |
-          echo '{"insecure-registries":["${{ vars.TARGET_PRIVATE_IP }}:5000"]}' | sudo tee /etc/docker/daemon.json
-          sudo systemctl restart docker
-
-      - name: Build runtime images
-        run: |
-          docker build -t ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/node:v1 ./runtimes/node-runtime
-          docker build -t ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/python:v1 ./runtimes/python-runtime
-
-      - name: Push runtime images
-        run: |
-          docker push ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/node:v1
-          docker push ${{ vars.TARGET_PRIVATE_IP }}:5000/runtimes/python:v1
-
       - name: Test SSH over VPN
         uses: appleboy/ssh-action@v1
         with:
@@ -179,6 +164,34 @@ jobs:
           ls -la
           echo "=== Artifacts ==="
           ls -la artifacts
+
+      - name: Copy runtimes to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "runtimes/*"
+          target: "/opt/faas-engine/runtimes/"
+
+      - name: Build runtime images on EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "Building runtime images..."
+
+            cd /opt/faas-engine/runtimes
+
+            docker build -t localhost:5000/runtimes/node:v1 node-runtime
+            docker build -t localhost:5000/runtimes/python:v1 python-runtime
+
+            docker push localhost:5000/runtimes/node:v1
+            docker push localhost:5000/runtimes/python:v1
+
+            echo "Runtime images built and pushed to local registry"
 
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7
