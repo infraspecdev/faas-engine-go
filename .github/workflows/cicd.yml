@@ -39,6 +39,12 @@ jobs:
     name: Run Tests
     runs-on: ubuntu-latest
 
+    services:
+      registry:
+        image: registry:2
+        ports:
+          - 5000:5000
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
@@ -55,8 +61,15 @@ jobs:
       - name: Download dependencies
         run: go mod tidy
 
+      - name: Verify registry is running
+        run: |
+          curl http://localhost:5000/v2/_catalog || true
+
       - name: Run tests
+        env:
+          REGISTRY_URL: localhost:5000
         run: go test -v ./...
+
   build:
     name: Build Application
     runs-on: ubuntu-latest
