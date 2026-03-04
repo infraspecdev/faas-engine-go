@@ -165,6 +165,16 @@ jobs:
           echo "=== Artifacts ==="
           ls -la artifacts
 
+      - name: Prepare deployment directory
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo mkdir -p /opt/faas-engine
+            sudo chown -R $USER:$USER /opt/faas-engine
+
       - name: Copy runtimes to server
         uses: appleboy/scp-action@v0.1.7
         with:
