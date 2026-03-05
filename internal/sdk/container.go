@@ -93,7 +93,7 @@ func (d *DockerClient) CreateContainer(
 					},
 				},
 			},
-			AutoRemove: false,
+			AutoRemove: true,
 		},
 		Name: containerName,
 	}
