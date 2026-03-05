@@ -35,7 +35,11 @@ func (d *DockerClient) PullImage(ctx context.Context, imageName string) error {
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
-	defer imageRef.Close()
+	defer func() {
+		if err := imageRef.Close(); err != nil {
+			fmt.Printf("failed to close image reference: %v", err)
+		}
+	}()
 
 	if _, err := io.Copy(io.Discard, imageRef); err != nil {
 		return fmt.Errorf("failed to copy image data: %w", err)
@@ -68,7 +72,11 @@ func (d *DockerClient) BuildImage(
 		return fmt.Errorf("failed to build image: %w", err)
 	}
 
-	defer image.Body.Close()
+	defer func() {
+		if err := image.Body.Close(); err != nil {
+			fmt.Printf("failed to close image body: %v", err)
+		}
+	}()
 
 	if _, err := io.Copy(os.Stdout, image.Body); err != nil {
 		return fmt.Errorf("failed to read build output: %w", err)
@@ -153,7 +161,11 @@ func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
 
-	defer imagePush.Close()
+	defer func() {
+		if err := imagePush.Close(); err != nil {
+			fmt.Printf("failed to close image push stream: %v", err)
+		}
+	}()
 
 	if _, err := io.Copy(io.Discard, imagePush); err != nil {
 		return fmt.Errorf("failed to read push output: %w", err)

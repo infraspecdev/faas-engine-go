@@ -166,7 +166,14 @@ func (d *DockerClient) StatsContainer(ctx context.Context, containerID string) (
 		return nil, err
 	}
 
-	defer stats.Body.Close()
+	defer func() {
+		if err := stats.Body.Close(); err != nil {
+			slog.Error(
+				"failed to close stats body",
+				"error", err,
+			)
+		}
+	}()
 
 	var buf bytes.Buffer
 
@@ -224,7 +231,13 @@ func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[str
 	if err != nil {
 		return nil, fmt.Errorf("failed to call container: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("failed to close response body",
+				"error", err,
+			)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

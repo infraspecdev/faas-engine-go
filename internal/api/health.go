@@ -3,12 +3,15 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 )
 
 // HealthHandler returns "OK" to indicate the service is running.
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "OK")
+	if _, err := fmt.Fprintf(w, "OK"); err != nil {
+		log.Printf("failed to write response: %v", err)
+	}
 }
 
 // GreetHandler returns a JSON greeting message.

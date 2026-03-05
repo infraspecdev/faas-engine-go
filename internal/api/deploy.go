@@ -44,7 +44,14 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			})
 			return
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				slog.Error("image_lifecycle",
+					"stage", "failed_to_close_file",
+					"error", err,
+				)
+			}
+		}()
 
 		name := r.FormValue("name")
 		if name == "" {
