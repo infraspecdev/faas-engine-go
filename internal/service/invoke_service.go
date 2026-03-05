@@ -9,32 +9,37 @@ import (
 	"time"
 
 	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
 )
 
-type FunctionInvoker struct{}
+type FunctionInvoker struct {
+	containerClient sdk.ContainerClient
+	imageClient     sdk.ImageClient
+	invokeFunc      func(ctx context.Context, hostPort string, payload []byte) (map[string]any, error)
+}
+
+func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvoker {
+	return &FunctionInvoker{
+		containerClient: c,
+		imageClient:     i,
+		invokeFunc:      sdk.InvokeContainer,
+	}
+}
 
 // Invoke invokes a function by creating and starting a container from the function's image.
 // It waits for the container to become healthy before sending the invocation request.
 // The container is cleaned up asynchronously after invocation.
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte) (any, error) {
 
-	ctx, cli, cancel, err := sdk.Init(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
 	target := config.ImageRef(config.FunctionsRepo, functionName, "")
 
 	slog.Info("container_lifecycle", "stage", "pulling", "function", functionName)
 
-	if err := sdk.PullImage(ctx, cli, target); err != nil {
+	if err := f.imageClient.PullImage(ctx, target); err != nil {
 		slog.Error("image_pull_failed", "function", functionName, "error", err)
 		return nil, err
 	}
 
-	containerId, err := sdk.CreateContainer(ctx, cli, functionName, target, nil)
+	containerId, err := f.containerClient.CreateContainer(ctx, functionName, target, nil)
 	if err != nil {
 		slog.Error("container_create_failed", "function", functionName, "error", err)
 		return nil, err
@@ -51,7 +56,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 			logger.Info("container_lifecycle", "stage", "stopping")
 
-			if err := sdk.StopContainer(cleanupCtx, cli, containerId); err != nil {
+			if err := f.containerClient.StopContainer(cleanupCtx, containerId); err != nil {
 				logger.Error("container_stop_failed", "error", err)
 			} else {
 				logger.Info("container_lifecycle", "stage", "stopped")
@@ -59,14 +64,13 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		}()
 	}()
 
-	if err := sdk.StartContainer(ctx, cli, containerId); err != nil {
+	if err := f.containerClient.StartContainer(ctx, containerId); err != nil {
 		logger.Error("container_start_failed", "error", err)
 		return nil, err
 	}
 
 	logger.Info("container_lifecycle", "stage", "starting")
 
-	// Wait for port binding
 	port, err := network.ParsePort(config.ContainerPort)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse port: %w", err)
@@ -76,7 +80,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	portDeadline := time.Now().Add(config.PortTimeout)
 
 	for time.Now().Before(portDeadline) {
-		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
+
+		inspect, err := f.containerClient.InspectContainer(ctx, containerId)
 
 		if err == nil && inspect.Container.NetworkSettings != nil {
 			bindings := inspect.Container.NetworkSettings.Ports[port]
@@ -89,12 +94,12 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		time.Sleep(200 * time.Millisecond)
 	}
 
-	// Wait for healthy
 	healthDeadline := time.Now().Add(config.HealthTimeout)
 	healthy := false
 
 	for time.Now().Before(healthDeadline) {
-		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
+
+		inspect, err := f.containerClient.InspectContainer(ctx, containerId)
 
 		if err == nil &&
 			inspect.Container.State != nil &&
@@ -119,5 +124,5 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	logger.Info("container_lifecycle", "stage", "invoking")
 
-	return sdk.InvokeContainer(ctx, hostPort, payload)
+	return f.invokeFunc(ctx, hostPort, payload)
 }

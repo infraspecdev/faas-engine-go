@@ -1,10 +1,9 @@
-package test
+package buildcontext
 
 import (
 	"archive/tar"
 	"bytes"
 	"encoding/json"
-	"faas-engine-go/internal/buildcontext"
 	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/types"
 	"fmt"
@@ -34,7 +33,7 @@ func TestPackageFunction_Success(t *testing.T) {
 
 	tempDir := createTempFunctionDir(t)
 
-	reader, err := buildcontext.CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -72,7 +71,7 @@ func TestPackageFunction_Success(t *testing.T) {
 }
 
 func TestPackageFunction_InvalidPath(t *testing.T) {
-	_, err := buildcontext.CreateTarStream("./invalid/path")
+	_, err := CreateTarStream("./invalid/path")
 
 	if err == nil {
 		t.Fatal("expected error for invalid path")
@@ -88,7 +87,7 @@ func TestCreateTarStream_IncludesDockerfile_WhenMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := buildcontext.CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -150,7 +149,7 @@ func TestCreateTarStream_DoesNotOverrideExistingDockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := buildcontext.CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -215,7 +214,7 @@ func TestSendTarStream_Success(t *testing.T) {
 
 	tarData := bytes.NewBufferString("dummy tar content")
 
-	message, err := buildcontext.SendTarStream(
+	message, err := SendTarStream(
 		tarData,
 		server.URL,
 		"test-function",

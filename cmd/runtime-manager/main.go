@@ -35,16 +35,18 @@ func main() {
 	}
 	defer cancel()
 
+	docker := sdk.NewDockerClient(cli)
+
 	// Setup router
 	r := mux.NewRouter()
 
-	realDeployer := &service.Deployer{CLI: cli}
-	invokeDeployer := &service.FunctionInvoker{}
+	realDeployer := service.NewDeployer(docker)
+	invokeInvoker := service.NewFunctionInvoker(docker, docker)
 
 	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(realDeployer)).Methods("POST")
-	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeDeployer)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
 

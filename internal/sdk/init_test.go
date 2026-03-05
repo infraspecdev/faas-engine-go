@@ -1,16 +1,14 @@
-package test
+package sdk
 
 import (
 	"context"
-	"faas-engine-go/internal/sdk"
 	"testing"
-	"time"
 )
 
 func TestInit_Success(t *testing.T) {
 	parent := context.Background()
 
-	ctx, cli, cancel, err := sdk.Init(parent)
+	ctx, cli, cancel, err := Init(parent)
 	if err != nil {
 		t.Fatalf("expected no error, got %v", err)
 	}
@@ -33,18 +31,17 @@ func TestInit_Success(t *testing.T) {
 func TestInit_ContextCancellation(t *testing.T) {
 	parent, cancelParent := context.WithCancel(context.Background())
 
-	ctx, _, cancel, err := sdk.Init(parent)
-	defer cancel()
-
+	ctx, _, cancel, err := Init(parent)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
+	defer cancel()
 
 	cancelParent()
 
-	select {
-	case <-ctx.Done():
-	case <-time.After(1 * time.Second):
-		t.Fatal("expected child context to be cancelled")
+	<-ctx.Done()
+
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("expected context canceled, got %v", ctx.Err())
 	}
 }

@@ -1,10 +1,10 @@
-package test
+package api
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"faas-engine-go/internal/api"
+
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -39,7 +39,7 @@ func TestInvokeHandler_Success(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.InvokeHandler(&mockInvoker{})
+	handler := InvokeHandler(&mockInvoker{})
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -61,7 +61,7 @@ func TestInvokeHandler_MissingFunctionName(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.InvokeHandler(&mockInvoker{})
+	handler := InvokeHandler(&mockInvoker{})
 	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -85,7 +85,7 @@ func TestInvokeHandler_InternalError(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.InvokeHandler(&mockInvoker{shouldFail: true})
+	handler := InvokeHandler(&mockInvoker{shouldFail: true})
 	handler(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {

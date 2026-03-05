@@ -34,7 +34,7 @@ to quickly create a Cobra application.`,
 
 		//send the tarstream to the server
 		url := fmt.Sprintf("%s/functions", serverAddr)
-		fmt.Print("url", url)
+
 		response, err := buildcontext.SendTarStream(tarstream, url, functionName)
 		if err != nil {
 			slog.Info("failed to send tar stream", "error", err)

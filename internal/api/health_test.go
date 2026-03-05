@@ -1,12 +1,10 @@
-package test
+package api
 
 import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"faas-engine-go/internal/api"
 )
 
 func TestGreetHandler_Success(t *testing.T) {
@@ -18,7 +16,7 @@ func TestGreetHandler_Success(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	api.GreetHandler(rr, req)
+	GreetHandler(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected status 200, got %d", rr.Code)
@@ -41,7 +39,7 @@ func TestGreetHandler_MissingName(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	api.GreetHandler(rr, req)
+	GreetHandler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected status 400, got %d", rr.Code)

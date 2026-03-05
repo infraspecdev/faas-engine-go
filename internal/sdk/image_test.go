@@ -1,10 +1,9 @@
-package test
+package sdk
 
 import (
 	"context"
 	"faas-engine-go/internal/buildcontext"
 	"faas-engine-go/internal/config"
-	"faas-engine-go/internal/sdk"
 	"fmt"
 	"os"
 	"testing"
@@ -16,6 +15,7 @@ import (
 var (
 	testCtx    context.Context
 	testCli    *client.Client
+	testDocker *DockerClient
 	testCancel context.CancelFunc
 )
 
@@ -38,6 +38,7 @@ func TestMain(m *testing.M) {
 
 	// initialize docker once
 	testCtx, testCli, testCancel = setupDockerGlobal()
+	testDocker = NewDockerClient(testCli)
 	defer testCancel()
 
 	// verify docker engine
@@ -47,7 +48,7 @@ func TestMain(m *testing.M) {
 	}
 
 	// pull alpine once for all tests
-	if err := sdk.PullImage(testCtx, testCli, "alpine"); err != nil {
+	if err := testDocker.PullImage(testCtx, "alpine"); err != nil {
 		panic("failed to pull alpine image: " + err.Error())
 	}
 
@@ -59,7 +60,7 @@ func TestMain(m *testing.M) {
 func TestPullImage_Fail(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.PullImage(testCtx, testCli, "")
+	err := testDocker.PullImage(testCtx, "")
 
 	// err = nil {no error case}
 	// err = "failed to pull image " {Error case}
@@ -82,7 +83,8 @@ func TestDockerEngineRunning(t *testing.T) {
 func TestPullImage_Success(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.PullImage(testCtx, testCli, "alpine")
+	err := testDocker.PullImage(testCtx, "alpine")
+
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -91,7 +93,7 @@ func TestPullImage_Success(t *testing.T) {
 func TestPullImage_InvalidImage(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.PullImage(testCtx, testCli, "invalidimagename:latest")
+	err := testDocker.PullImage(testCtx, "invalidimagename:latest")
 	if err != nil {
 		t.Log("expected error for invalid image:", err)
 	} else {
@@ -103,12 +105,12 @@ func TestBuildImage_Success(t *testing.T) {
 	t.Parallel()
 
 	// data, err := os.ReadFile("test_samples/function.tar")
-	tarstream, err := buildcontext.CreateTarStream("../../../samples/hello")
+	tarstream, err := buildcontext.CreateTarStream("../../samples/hello")
 	if err != nil {
 		t.Fatalf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = sdk.BuildImage(testCtx, testCli, "testimage:latest", tarstream)
+	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream)
 	if err != nil {
 		t.Fatalf("unexpected error - failed to build image: %v", err)
 	}
@@ -122,7 +124,7 @@ func TestBuildImage_InvalidDirectory(t *testing.T) {
 		t.Fatal("expected error creating tar stream for invalid directory, got nil")
 	}
 
-	err = sdk.BuildImage(testCtx, testCli, "testimage:latest", tarstream)
+	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream)
 	if err == nil {
 		t.Fatal("expected build to fail for invalid directory, got nil")
 	}
@@ -131,27 +133,25 @@ func TestBuildImage_InvalidDirectory(t *testing.T) {
 func TestBuildImage_duplicateImageName(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.PullImage(testCtx, testCli, "alpine")
+	err := testDocker.PullImage(testCtx, "alpine")
 	if err != nil {
 		t.Fatalf("unexpected error pulling alpine image: %v", err)
 	}
 	t.Log("Pulled image successfully")
 
 	defer func() {
-		result, err := testCli.ImageRemove(testCtx, "alpine:latest", client.ImageRemoveOptions{Force: true})
+		err := testDocker.RemoveImage(testCtx, "alpine:latest")
 		if err != nil {
 			t.Logf("failed to remove image: %v", err)
-		} else {
-			t.Log("Cleaned up image successfully:", result)
 		}
 	}()
 
-	tarstream, err := buildcontext.CreateTarStream("../../../samples/hello")
+	tarstream, err := buildcontext.CreateTarStream("../../samples/hello")
 	if err != nil {
 		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = sdk.BuildImage(testCtx, testCli, "alpine", tarstream)
+	err = testDocker.BuildImage(testCtx, "alpine", tarstream)
 	if err == nil {
 		t.Fatal("expected error for duplicate image name, got nil")
 	}
@@ -165,21 +165,21 @@ func TestTagImage_Success(t *testing.T) {
 	source := "alpine:latest"
 	target := "alpine:testtag"
 
-	if err := sdk.PullImage(testCtx, testCli, "alpine"); err != nil {
+	if err := testDocker.PullImage(testCtx, "alpine"); err != nil {
 		t.Fatalf("failed to pull alpine image: %v", err)
 	}
 
-	if err := sdk.TagImage(testCtx, testCli, source, target); err != nil {
+	if err := testDocker.TagImage(testCtx, source, target); err != nil {
 		t.Fatalf("failed to tag image: %v", err)
 	}
 
-	images, err := testCli.ImageList(testCtx, client.ImageListOptions{})
+	images, err := testDocker.ListImages(testCtx)
 	if err != nil {
 		t.Fatalf("failed to list images: %v", err)
 	}
 
 	found := false
-	for _, img := range images.Items {
+	for _, img := range images {
 		for _, tag := range img.RepoTags {
 			if tag == target {
 				found = true
@@ -198,7 +198,7 @@ func TestTagImage_Success(t *testing.T) {
 func TestTagImage_InvalidSource(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.TagImage(testCtx, testCli, "nonexistent:image", "test:tag")
+	err := testDocker.TagImage(testCtx, "nonexistent:image", "test:tag")
 	if err == nil {
 		t.Fatal("expected error for invalid source image, got nil")
 	}
@@ -208,7 +208,7 @@ func TestRemoveImage_Success(t *testing.T) {
 	t.Parallel()
 
 	// Ensure alpine exists
-	if err := sdk.PullImage(testCtx, testCli, "alpine"); err != nil {
+	if err := testDocker.PullImage(testCtx, "alpine"); err != nil {
 		t.Fatalf("failed to pull alpine image: %v", err)
 	}
 
@@ -216,22 +216,22 @@ func TestRemoveImage_Success(t *testing.T) {
 	target := fmt.Sprintf("alpine:test-remove-%d", time.Now().UnixNano())
 
 	// Tag it first
-	if err := sdk.TagImage(testCtx, testCli, "alpine:latest", target); err != nil {
+	if err := testDocker.TagImage(testCtx, "alpine:latest", target); err != nil {
 		t.Fatalf("failed to tag image: %v", err)
 	}
 
 	// Remove tagged image
-	if err := sdk.RemoveImage(testCtx, testCli, target); err != nil {
+	if err := testDocker.RemoveImage(testCtx, target); err != nil {
 		t.Fatalf("failed to remove image: %v", err)
 	}
 
 	// Verify removal
-	images, err := testCli.ImageList(testCtx, client.ImageListOptions{})
+	images, err := testDocker.ListImages(testCtx)
 	if err != nil {
 		t.Fatalf("failed to list images: %v", err)
 	}
 
-	for _, img := range images.Items {
+	for _, img := range images {
 		for _, tag := range img.RepoTags {
 			if tag == target {
 				t.Fatalf("image %s still exists after removal", target)
@@ -243,7 +243,7 @@ func TestRemoveImage_Success(t *testing.T) {
 func TestRemoveImage_NonExistent(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.RemoveImage(testCtx, testCli, "nonexistent:image")
+	err := testDocker.RemoveImage(testCtx, "nonexistent:image")
 	if err == nil {
 		t.Fatal("expected error removing non-existent image, got nil")
 	}
@@ -252,12 +252,12 @@ func TestRemoveImage_NonExistent(t *testing.T) {
 func TestTagImage_InvalidTarget(t *testing.T) {
 	t.Parallel()
 
-	err := sdk.PullImage(testCtx, testCli, "alpine:latest")
+	err := testDocker.PullImage(testCtx, "alpine:latest")
 	if err != nil {
 		t.Fatalf("failed to pull alpine image: %v", err)
 	}
 
-	err = sdk.TagImage(testCtx, testCli, "alpine:latest", "INVALID IMAGE NAME")
+	err = testDocker.TagImage(testCtx, "alpine:latest", "INVALID IMAGE NAME")
 	if err == nil {
 		t.Fatal("expected error for invalid target image, got nil")
 	}
@@ -266,16 +266,16 @@ func TestTagImage_InvalidTarget(t *testing.T) {
 func TestPushImage_Success(t *testing.T) {
 	t.Parallel()
 
-	if err := sdk.PullImage(testCtx, testCli, "alpine"); err != nil {
+	if err := testDocker.PullImage(testCtx, "alpine"); err != nil {
 		t.Fatalf("failed to pull alpine image: %v", err)
 	}
 
 	target := config.ImageRef(config.FunctionsRepo, "alpine", "testpush")
-	if err := sdk.TagImage(testCtx, testCli, "alpine:latest", target); err != nil {
+	if err := testDocker.TagImage(testCtx, "alpine:latest", target); err != nil {
 		t.Fatalf("failed to tag image: %v", err)
 	}
 
-	if err := sdk.PushImage(testCtx, testCli, target); err != nil {
+	if err := testDocker.PushImage(testCtx, target); err != nil {
 		t.Fatalf("failed to push image: %v", err)
 	}
 }

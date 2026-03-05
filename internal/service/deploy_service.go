@@ -6,12 +6,16 @@ import (
 	"faas-engine-go/internal/sdk"
 	"io"
 	"log/slog"
-
-	"github.com/moby/moby/client"
 )
 
 type Deployer struct {
-	CLI *client.Client
+	imageClient sdk.ImageClient
+}
+
+func NewDeployer(img sdk.ImageClient) *Deployer {
+	return &Deployer{
+		imageClient: img,
+	}
 }
 
 // Deploy builds a Docker image from the provided file stream, tags it with the appropriate registry reference, pushes it to the registry, and then removes the local image.
@@ -20,24 +24,24 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader) erro
 	logger := slog.With("function", name)
 
 	logger.Info("image_lifecycle", "stage", "building")
-	if err := sdk.BuildImage(ctx, d.CLI, name, file); err != nil {
+	if err := d.imageClient.BuildImage(ctx, name, file); err != nil {
 		return err
 	}
 
 	target := config.ImageRef(config.FunctionsRepo, name, "")
 
 	logger.Info("image_lifecycle", "stage", "tagging")
-	if err := sdk.TagImage(ctx, d.CLI, name, target); err != nil {
+	if err := d.imageClient.TagImage(ctx, name, target); err != nil {
 		return err
 	}
 
 	logger.Info("image_lifecycle", "stage", "pushing")
-	if err := sdk.PushImage(ctx, d.CLI, target); err != nil {
+	if err := d.imageClient.PushImage(ctx, target); err != nil {
 		return err
 	}
 
 	logger.Info("image_lifecycle", "stage", "removing_local")
-	if err := sdk.RemoveImage(ctx, d.CLI, name); err != nil {
+	if err := d.imageClient.RemoveImage(ctx, name); err != nil {
 		return err
 	}
 
