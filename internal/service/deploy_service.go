@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 
+	"github.com/fatih/color"
 	"github.com/moby/moby/client"
 )
 
@@ -20,7 +21,10 @@ type Deployer struct {
 func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out io.Writer) error {
 	logger := slog.With("function", name)
 
-	fmt.Fprint(out, "\n[2/3] Building function image...\n\n")
+	cyan := color.New(color.FgCyan)
+	fmt.Fprint(out, "\n[2/3] Building image ")
+	cyan.Fprintf(out, "\"func-%s\"", name)
+	fmt.Fprint(out, "...\n\n")
 
 	logger.Info("image_lifecycle", "stage", "building")
 	if err := sdk.BuildImage(ctx, d.CLI, name, file, out); err != nil {
@@ -34,6 +38,9 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
+	fmt.Fprint(out, "...")
+	color.New(color.FgGreen).Fprintln(out, " Done.")
+
 	fmt.Fprint(out, "\n[3/3] Pushing image...")
 
 	logger.Info("image_lifecycle", "stage", "pushing")
@@ -41,7 +48,7 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
-	fmt.Fprintln(out, " Done.")
+	color.New(color.FgGreen).Fprintln(out, " Done.")
 
 	logger.Info("image_lifecycle", "stage", "removing_local")
 	if err := sdk.RemoveImage(ctx, d.CLI, name); err != nil {

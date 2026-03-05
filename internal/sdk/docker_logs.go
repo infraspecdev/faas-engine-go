@@ -8,6 +8,13 @@ import (
 	"strings"
 )
 
+var noisy = map[string]bool{
+	"Pulling fs layer":  true,
+	"Pull complete":     true,
+	"Already exists":    true,
+	"Download complete": true,
+}
+
 func streamDockerLogs(r io.Reader, out io.Writer) error {
 
 	dec := json.NewDecoder(r)
@@ -28,6 +35,7 @@ func streamDockerLogs(r io.Reader, out io.Writer) error {
 			return fmt.Errorf("%s", msg.Error)
 		}
 
+		// Handle build stream output
 		if msg.Stream != "" {
 			line := strings.TrimSpace(msg.Stream)
 
@@ -51,6 +59,10 @@ func streamDockerLogs(r io.Reader, out io.Writer) error {
 		}
 
 		if msg.Status != "" {
+
+			if noisy[msg.Status] {
+				continue
+			}
 
 			if msg.ID != "" {
 
