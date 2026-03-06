@@ -2,14 +2,26 @@ package test
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"faas-engine-go/internal/api"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"github.com/gorilla/mux"
 )
+
+type mockInvoker struct {
+	shouldFail bool
+}
+
+func (m *mockInvoker) Invoke(ctx context.Context, name string, payload []byte) (any, error) {
+	if m.shouldFail {
+		return nil, errors.New("invoke failed")
+	}
+	return map[string]string{"message": "ok"}, nil
+}
 
 func TestInvokeHandler_Success(t *testing.T) {
 
@@ -27,7 +39,8 @@ func TestInvokeHandler_Success(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	api.InvokeHandler(rr, req)
+	handler := api.InvokeHandler(&mockInvoker{})
+	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
@@ -35,12 +48,11 @@ func TestInvokeHandler_Success(t *testing.T) {
 }
 
 func TestInvokeHandler_MissingFunctionName(t *testing.T) {
-	body := []byte(`{"cmd":"echo hello world"}`)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/functions/functionName/invoke",
-		bytes.NewBuffer(body),
+		"/functions//invoke",
+		nil,
 	)
 
 	req = mux.SetURLVars(req, map[string]string{
@@ -49,17 +61,17 @@ func TestInvokeHandler_MissingFunctionName(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	api.InvokeHandler(rr, req)
+	handler := api.InvokeHandler(&mockInvoker{})
+	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d", rr.Code)
 	}
-
 }
 
-func TestInvokeHandler_InvalidJSON(t *testing.T) {
+func TestInvokeHandler_InternalError(t *testing.T) {
 
-	body := []byte(`{"new":"echo hello world"}`)
+	body := []byte(`{"cmd":"echo hello world"}`)
 
 	req := httptest.NewRequest(
 		http.MethodPost,
@@ -73,39 +85,10 @@ func TestInvokeHandler_InvalidJSON(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	api.InvokeHandler(rr, req)
+	handler := api.InvokeHandler(&mockInvoker{shouldFail: true})
+	handler(rr, req)
 
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-}
-
-func TestInvokeHandler_MissingCmd(t *testing.T) {
-
-	body := []byte(`{"cmd":""}`)
-
-	req := httptest.NewRequest(
-		http.MethodPost,
-		"/functions/alpine/invoke",
-		bytes.NewBuffer(body),
-	)
-
-	req = mux.SetURLVars(req, map[string]string{
-		"functionName": "alpine",
-	})
-
-	rr := httptest.NewRecorder()
-
-	api.InvokeHandler(rr, req)
-
-	if rr.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", rr.Code)
-	}
-
-	expected := "cmd is required"
-	result := strings.TrimSpace(rr.Body.String())
-
-	if result != expected {
-		t.Fatalf("expected '%s', got '%s'", expected, result)
+	if rr.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rr.Code)
 	}
 }
