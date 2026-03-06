@@ -53,6 +53,11 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 		return err
 	}
 
+	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
+	if err != nil {
+		return err
+	}
+
 	slog.Info("Image built successfully", "image_name", imageName)
 	return nil
 }
