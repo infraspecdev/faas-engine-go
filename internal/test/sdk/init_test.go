@@ -30,21 +30,21 @@ func TestInit_Success(t *testing.T) {
 	cancel()
 }
 
-func TestInit_ContextTimeout(t *testing.T) {
+func TestInit_ContextCancellation(t *testing.T) {
+	parent, cancelParent := context.WithCancel(context.Background())
 
-	ctx, _, cancel, err := sdk.Init(context.Background())
+	ctx, _, cancel, err := sdk.Init(parent)
 	defer cancel()
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	deadline, ok := ctx.Deadline()
-	if !ok {
-		t.Fatal("expected context to have deadline")
-	}
+	cancelParent()
 
-	if time.Until(deadline) > 10*time.Second {
-		t.Fatal("deadline exceeds expected timeout")
+	select {
+	case <-ctx.Done():
+	case <-time.After(1 * time.Second):
+		t.Fatal("expected child context to be cancelled")
 	}
 }

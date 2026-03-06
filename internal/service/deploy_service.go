@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
 	"io"
 
@@ -13,15 +14,11 @@ type Deployer struct {
 }
 
 func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader) error {
-	if err := sdk.CheckImageName(ctx, d.CLI, name); err != nil {
-		return err
-	}
-
 	if err := sdk.BuildImage(ctx, d.CLI, name, file); err != nil {
 		return err
 	}
 
-	target := "localhost:5000/functions/" + name
+	target := config.Registry() + "/" + config.FunctionsNamespace() + "/" + name
 
 	if err := sdk.TagImage(ctx, d.CLI, name, target); err != nil {
 		return err

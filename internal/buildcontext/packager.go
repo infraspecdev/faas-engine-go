@@ -3,7 +3,7 @@ package buildcontext
 import (
 	"archive/tar"
 	"encoding/json"
-	"faas-engine-go/internal/api"
+	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -13,7 +13,6 @@ import (
 )
 
 func CreateTarStream(dirPath string) (io.Reader, error) {
-
 	info, err := os.Stat(dirPath)
 	if err != nil {
 		return nil, err
@@ -22,50 +21,92 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 		return nil, fmt.Errorf("path is not a directory")
 	}
 
+	// Check if Dockerfile already exists
+	dockerfilePath := filepath.Join(dirPath, "Dockerfile")
+	_, err = os.Stat(dockerfilePath)
+	dockerfileExists := (err == nil)
+
 	pr, pw := io.Pipe()
-	tw := tar.NewWriter(pw)
 
 	go func() {
+		tw := tar.NewWriter(pw)
 		defer pw.Close()
 		defer tw.Close()
 
-		filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
+		err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
-				pw.CloseWithError(err)
-				return err
-			}
-
-			header, err := tar.FileInfoHeader(info, "")
-			if err != nil {
-				pw.CloseWithError(err)
 				return err
 			}
 
 			relPath, err := filepath.Rel(dirPath, path)
 			if err != nil {
-				pw.CloseWithError(err)
+				return err
+			}
+
+			if relPath == "." {
+				return nil
+			}
+
+			header, err := tar.FileInfoHeader(info, "")
+			if err != nil {
 				return err
 			}
 
 			header.Name = relPath
 
 			if err := tw.WriteHeader(header); err != nil {
-				pw.CloseWithError(err)
 				return err
 			}
 
-			if !info.IsDir() {
-				file, err := os.Open(path)
-				if err != nil {
-					pw.CloseWithError(err)
-					return err
-				}
-				defer file.Close()
-				io.Copy(tw, file)
+			if info.IsDir() {
+				return nil
 			}
 
+			file, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer file.Close()
+
+			if _, err := io.Copy(tw, file); err != nil {
+				return fmt.Errorf("failed copying %s: %w", relPath, err)
+			}
 			return nil
 		})
+
+		if err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		// Inject Dockerfile only if not present
+		if !dockerfileExists {
+
+			baseImage := "localhost:5000/runtimes/node:v1" // should make it configurable
+
+			dockerfile := fmt.Sprintf(
+				"FROM %s\nWORKDIR /function\nCOPY . .\n",
+				baseImage,
+			)
+
+			dfBytes := []byte(dockerfile)
+
+			header := &tar.Header{
+				Name: "Dockerfile",
+				Mode: 0644,
+				Size: int64(len(dfBytes)),
+			}
+
+			if err := tw.WriteHeader(header); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+
+			if _, err := tw.Write(dfBytes); err != nil {
+				pw.CloseWithError(err)
+				return
+			}
+		}
 	}()
 
 	return pr, nil
@@ -113,7 +154,12 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 	}
 	defer resp.Body.Close()
 
-	var response api.DeployResponse
+	var response types.DeployResponse
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("server returned %s: %s", resp.Status, string(body))
+	}
 
 	err = json.NewDecoder(resp.Body).Decode(&response)
 	if err != nil {
@@ -123,8 +169,6 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("server returned %s", resp.Status)
 	}
-
-	_, err = io.Copy(os.Stdout, resp.Body)
 
 	return response.Message, err
 }
