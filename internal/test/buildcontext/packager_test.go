@@ -118,7 +118,7 @@ func TestCreateTarStream_IncludesDockerfile_WhenMissing(t *testing.T) {
 			foundDockerfile = true
 			data, _ := io.ReadAll(tr)
 
-			expected := "FROM localhost:5000/runtimes/node:v1\nWORKDIR /function\nCOPY . .\n"
+			expected := "FROM localhost:5000/runtimes/node:v1\nCOPY . /function\n"
 			if string(data) != expected {
 				t.Fatalf("unexpected Dockerfile content:\nexpected:\n%s\ngot:\n%s",
 					expected, string(data))
