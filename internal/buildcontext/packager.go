@@ -85,7 +85,7 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 			baseImage := "localhost:5000/runtimes/node:v1" // should make it configurable
 
 			dockerfile := fmt.Sprintf(
-				"FROM %s\nWORKDIR /function\nCOPY . .\n",
+				"FROM %s\nCOPY . /function\n",
 				baseImage,
 			)
 
