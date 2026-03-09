@@ -47,9 +47,11 @@ func init() {
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+
 	rootCmd.PersistentFlags().StringVar(
 		&serverAddr,
 		"server",
+		// "http://10.30.20.196:8080",
 		"http://localhost:8080",
 		"Address of the runtime manager server",
 	)

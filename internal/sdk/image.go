@@ -7,7 +7,6 @@ import (
 	"faas-engine-go/internal/config"
 	"fmt"
 	"io"
-	"os"
 	"strings"
 
 	"github.com/moby/moby/api/types/image"
@@ -50,11 +49,7 @@ func (d *DockerClient) PullImage(ctx context.Context, imageName string) error {
 
 // BuildImage builds a Docker image using the provided tar build context.
 // It validates that the image if name does not already exist before building.
-func (d *DockerClient) BuildImage(
-	ctx context.Context,
-	imageName string,
-	tarfile io.Reader,
-) error {
+func (d *DockerClient) BuildImage(ctx context.Context, imageName string, tarfile io.Reader, out io.Writer) error {
 
 	err := d.CheckImageName(ctx, imageName)
 	if err != nil {
@@ -78,7 +73,7 @@ func (d *DockerClient) BuildImage(
 		}
 	}()
 
-	if _, err := io.Copy(os.Stdout, image.Body); err != nil {
+	if err := streamDockerLogs(image.Body, out); err != nil {
 		return fmt.Errorf("failed to read build output: %w", err)
 	}
 
