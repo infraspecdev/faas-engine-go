@@ -5,8 +5,10 @@ package cmd
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 
+	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -46,11 +48,22 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
+	if err := godotenv.Load(); err != nil {
+		slog.Warn("could not load .env file, using default configuration")
+	}
+	targetUrl := os.Getenv("PROXY_URL")
+	if targetUrl == "" {
+		targetUrl = "http://localhost"
+	}
+	targetPort := os.Getenv("PROXY_PORT")
+	if targetPort == "" {
+		targetPort = "80"
+	}
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.PersistentFlags().StringVar(
 		&serverAddr,
 		"server",
-		"http://localhost:8080",
+		targetUrl+":"+targetPort,
 		"Address of the runtime manager server",
 	)
 }

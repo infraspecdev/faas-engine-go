@@ -22,7 +22,7 @@ func main() {
 		slog.Warn("could not load .env file, using default configuration")
 	}
 
-	port := os.Getenv("PORT")
+	port := os.Getenv("RUNTIME_PORT")
 	if port == "" {
 		port = "8080"
 	}
