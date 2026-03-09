@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"faas-engine-go/internal/config"
-	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,36 +10,30 @@ import (
 )
 
 type Deployer interface {
-	Deploy(ctx context.Context, name string, file io.Reader) error
+	Deploy(ctx context.Context, name string, file io.Reader, out io.Writer) error
 }
 
-// DeployHandler handles multipart file upload requests for deploying a new function.
-// It enforces a maximum upload size and returns 400 Bad Request if the file field is missing.
 func DeployHandler(deployer Deployer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "text/plain")
 
 		r.Body = http.MaxBytesReader(w, r.Body, config.MaxUploadSize)
 
 		if err := r.ParseMultipartForm(config.MaxUploadSize); err != nil {
-			slog.Error("image_lifecycle",
-				"stage", "invalid_upload",
-				"error", err,
-			)
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "file too large",
-			})
+			http.Error(w, "file too large", http.StatusBadRequest)
 			return
 		}
 
 		file, _, err := r.FormFile("file")
 		if err != nil {
-			slog.Error("image_lifecycle",
-				"stage", "missing_file",
-				"error", err,
-			)
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "missing 'file' field",
-			})
+			http.Error(w, "missing file", http.StatusBadRequest)
 			return
 		}
 		defer func() {
@@ -54,43 +46,26 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 		}()
 
 		name := r.FormValue("name")
-		if name == "" {
-			slog.Error("image_lifecycle",
-				"stage", "missing_name",
-			)
-			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"error": "missing function name",
-			})
+
+		out := &flushWriter{w, flusher}
+
+		err = deployer.Deploy(r.Context(), name, file, out)
+		if err != nil {
+			fmt.Fprintf(out, "\nERROR: %s\n", err)
 			return
 		}
 
-		logger := slog.With("function", name)
-
-		logger.Info("image_lifecycle", "stage", "deploying")
-
-		if err := deployer.Deploy(r.Context(), name, file); err != nil {
-			logger.Error("image_lifecycle",
-				"stage", "failed",
-				"error", err,
-			)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{
-				"error": err.Error(),
-			})
-			return
-		}
-
-		logger.Info("image_lifecycle", "stage", "deployed")
-
-		writeJSON(w, http.StatusOK, types.DeployResponse{
-			Message: fmt.Sprintf("Deployed '%s' successfully", name),
-		})
+		fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n", name)
 	}
 }
 
-func writeJSON(w http.ResponseWriter, status int, payload any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-	}
+type flushWriter struct {
+	w       http.ResponseWriter
+	flusher http.Flusher
+}
+
+func (f *flushWriter) Write(p []byte) (int, error) {
+	n, err := f.w.Write(p)
+	f.flusher.Flush()
+	return n, err
 }

@@ -17,7 +17,7 @@ type mockDeployer struct {
 	shouldFail bool
 }
 
-func (m *mockDeployer) Deploy(ctx context.Context, name string, file io.Reader) error {
+func (m *mockDeployer) Deploy(ctx context.Context, name string, file io.Reader, out io.Writer) error {
 	if m.shouldFail {
 		return errors.New("deploy failed")
 	}
@@ -93,7 +93,7 @@ func TestDeployHandler_Success(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 
-	expected := `{"message":"Deployed 'test-fn' successfully"}`
+	expected := "Your function is live at: http://test-fn.localhost"
 	result := strings.TrimSpace(rr.Body.String())
 
 	if result != expected {
@@ -155,11 +155,12 @@ func TestDeployHandler_InternalError(t *testing.T) {
 	handler := api.DeployHandler(&mockDeployer{shouldFail: true})
 	handler(rr, req)
 
-	if rr.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d", rr.Code)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 
-	expected := `{"error":"deploy failed"}`
+	expected := "ERROR: deploy failed"
+
 	result := strings.TrimSpace(rr.Body.String())
 
 	if result != expected {

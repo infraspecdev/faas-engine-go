@@ -5,6 +5,7 @@ import (
 	"faas-engine-go/internal/buildcontext"
 	"faas-engine-go/internal/config"
 	"fmt"
+	"io"
 	"os"
 	"testing"
 	"time"
@@ -110,7 +111,7 @@ func TestBuildImage_Success(t *testing.T) {
 		t.Fatalf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream)
+	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream, io.Discard)
 	if err != nil {
 		t.Fatalf("unexpected error - failed to build image: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestBuildImage_InvalidDirectory(t *testing.T) {
 		t.Fatal("expected error creating tar stream for invalid directory, got nil")
 	}
 
-	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream)
+	err = testDocker.BuildImage(testCtx, "testimage:latest", tarstream, io.Discard)
 	if err == nil {
 		t.Fatal("expected build to fail for invalid directory, got nil")
 	}
@@ -151,7 +152,7 @@ func TestBuildImage_duplicateImageName(t *testing.T) {
 		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = testDocker.BuildImage(testCtx, "alpine", tarstream)
+	err = testDocker.BuildImage(testCtx, "alpine", tarstream, io.Discard)
 	if err == nil {
 		t.Fatal("expected error for duplicate image name, got nil")
 	}

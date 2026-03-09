@@ -3,9 +3,7 @@ package buildcontext
 import (
 	"archive/tar"
 	"bytes"
-	"encoding/json"
 	"faas-engine-go/internal/config"
-	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
 	"net/http"
@@ -186,10 +184,6 @@ func TestCreateTarStream_DoesNotOverrideExistingDockerfile(t *testing.T) {
 
 func TestSendTarStream_Success(t *testing.T) {
 
-	mockResponse := types.DeployResponse{
-		Message: "deploy successful",
-	}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		if r.Method != http.MethodPost {
@@ -205,16 +199,16 @@ func TestSendTarStream_Success(t *testing.T) {
 			t.Fatalf("expected function name 'test-function'")
 		}
 
-		w.WriteHeader(http.StatusOK)
-		if err := json.NewEncoder(w).Encode(mockResponse); err != nil {
-			t.Fatalf("Failed to encode response: %v", err)
-		}
+		// simulate streaming deploy output
+		fmt.Fprintln(w, "[1/3] Packaging function code... Done.")
+		fmt.Fprintln(w, "[2/3] Building image... Done.")
+		fmt.Fprintln(w, "[3/3] Pushing image... Done.")
 	}))
 	defer server.Close()
 
 	tarData := bytes.NewBufferString("dummy tar content")
 
-	message, err := SendTarStream(
+	err := SendTarStream(
 		tarData,
 		server.URL,
 		"test-function",
@@ -222,9 +216,5 @@ func TestSendTarStream_Success(t *testing.T) {
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if message != "deploy successful" {
-		t.Fatalf("unexpected message: %s", message)
 	}
 }

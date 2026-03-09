@@ -33,7 +33,7 @@ func (f *fakeImageClient) PullImage(ctx context.Context, name string) error {
 	return f.pullErr
 }
 
-func (f *fakeImageClient) BuildImage(ctx context.Context, name string, r io.Reader) error {
+func (f *fakeImageClient) BuildImage(ctx context.Context, name string, r io.Reader, w io.Writer) error {
 	f.buildCalled = true
 	return f.buildErr
 }
@@ -63,7 +63,7 @@ func TestDeploy_Success(t *testing.T) {
 
 	deployer := NewDeployer(fake)
 
-	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")))
+	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -101,7 +101,7 @@ func TestDeploy_BuildImageFail(t *testing.T) {
 
 	deployer := NewDeployer(fake)
 
-	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")))
+	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -133,7 +133,7 @@ func TestDeploy_TagImageFail(t *testing.T) {
 
 	deployer := NewDeployer(fake)
 
-	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")))
+	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -165,7 +165,7 @@ func TestDeploy_PushImageFail(t *testing.T) {
 
 	deployer := NewDeployer(fake)
 
-	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")))
+	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -197,7 +197,7 @@ func TestDeploy_RemoveImageFail(t *testing.T) {
 
 	deployer := NewDeployer(fake)
 
-	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")))
+	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
 	if err == nil {
 		t.Fatal("expected error but got nil")

@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"path/filepath"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -27,21 +28,22 @@ to quickly create a Cobra application.`,
 			return fmt.Errorf("failed to get absolute path: %w", err)
 		}
 		//create a tar stream of the function directory
+		fmt.Print("[1/3] Packaging function code...")
 		tarstream, err := buildcontext.CreateTarStream(abspath)
 		if err != nil {
 			return fmt.Errorf("failed to create tar stream: %w", err)
 		}
+		color.New(color.FgGreen).Println(" Done.")
 
 		//send the tarstream to the server
 		url := fmt.Sprintf("%s/functions", serverAddr)
 
-		response, err := buildcontext.SendTarStream(tarstream, url, functionName)
+		// Stream deploy logs from server
+		err = buildcontext.SendTarStream(tarstream, url, functionName)
 		if err != nil {
-			slog.Info("failed to send tar stream", "error", err)
+			slog.Error("deployment failed", "error", err)
 			return err
 		}
-
-		slog.Info("response from server:", "Message", response)
 
 		return nil
 	},
