@@ -94,17 +94,27 @@ jobs:
         run: |
           mkdir -p ./bin
           go build -o ./bin/runtime-manager ./cmd/runtime-manager/.
+          go build -o ./bin/proxy ./cmd/proxy/.
+
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
           name: runtime-manager-binary
           path: ./bin/runtime-manager
 
+      - name: Upload proxy artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: proxy-binary
+          path: ./bin/proxy
+
       - name: Upload service artifact
         uses: actions/upload-artifact@v4
         with:
-          name: faas-engine.service
-          path: ./infra/faas-engine.service
+          name: services
+          path: |
+            ./infra/faas-engine.service
+            ./infra/faas-proxy.service
 
   deploy:
     name: Deploy Application
@@ -121,10 +131,16 @@ jobs:
           name: runtime-manager-binary
           path: ./artifacts
 
+      - name: Download proxy artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: proxy-binary
+          path: ./artifacts
+
       - name: Download service artifact
         uses: actions/download-artifact@v4
         with:
-          name: faas-engine.service
+          name: services
           path: ./artifacts
 
       - name: Setting up WireGuard VPN
@@ -192,7 +208,7 @@ jobs:
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
             echo "Runtime images built and pushed to local registry"
-      - name: Copy binary to server
+      - name: Copy runtime binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
@@ -201,14 +217,23 @@ jobs:
           source: "./artifacts/runtime-manager"
           target: "/tmp"
           # strip_components: 1
-
-      - name: Copy service file to server
+      - name: Copy proxy binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/faas-engine.service"
+          source: "./artifacts/proxy"
+          target: "/tmp"
+          # strip_components: 1
+
+      - name: Copy service files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "./artifacts/services/"
           target: "/tmp"
           # strip_components: 1
 
@@ -220,48 +245,100 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
+
             echo "=== Starting Deployment ==="
-            echo "=== DEBUG: /tmp contents ==="
-            ls -l /tmp
-            echo "=== Stopping existing service ==="
+
+            echo "=== DEBUG: /tmp/artifacts contents ==="
+            ls -l /tmp/artifacts
+
+            echo "=== Stopping existing services ==="
             sudo systemctl stop faas-engine || true
-            # Ensure required directories exist
+            sudo systemctl stop faas-proxy || true
+
+            echo "=== Ensuring required directories exist ==="
             sudo mkdir -p /opt/faas-engine
             sudo mkdir -p /backup/bin
             sudo mkdir -p /backup/services
+
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            echo "=== Backing up existing binary if present ==="
+
+            echo "=== Backing up existing runtime binary ==="
             if [ -f /opt/faas-engine/runtime-manager ]; then
               sudo cp /opt/faas-engine/runtime-manager \
                 /backup/bin/runtime-manager.$TIMESTAMP
-              echo "Binary backup created"
+              echo "Runtime binary backup created"
             else
-              echo "No existing binary to back up"
+              echo "No runtime binary to back up"
             fi
-            echo "=== Backing up existing service file if present ==="
+
+            echo "=== Backing up existing proxy binary ==="
+            if [ -f /opt/faas-engine/proxy ]; then
+              sudo cp /opt/faas-engine/proxy \
+                /backup/bin/proxy.$TIMESTAMP
+              echo "Proxy binary backup created"
+            else
+              echo "No proxy binary to back up"
+            fi
+
+            echo "=== Backing up runtime service file ==="
             if [ -f /etc/systemd/system/faas-engine.service ]; then
               sudo cp /etc/systemd/system/faas-engine.service \
                 /backup/services/faas-engine.service.$TIMESTAMP
-              echo "Service backup created"
+              echo "Runtime service backup created"
             else
-              echo "No existing service file to back up"
+              echo "No runtime service file to back up"
             fi
-            echo "=== Cleaning old runtime-manager completely ==="
-            sudo rm -rf /opt/faas-engine/runtime-manager
-            echo "=== Deploying new binary ==="
+
+            echo "=== Backing up proxy service file ==="
+            if [ -f /etc/systemd/system/faas-proxy.service ]; then
+              sudo cp /etc/systemd/system/faas-proxy.service \
+                /backup/services/faas-proxy.service.$TIMESTAMP
+              echo "Proxy service backup created"
+            else
+              echo "No proxy service file to back up"
+            fi
+
+            echo "=== Cleaning old binaries ==="
+            sudo rm -f /opt/faas-engine/runtime-manager
+            sudo rm -f /opt/faas-engine/proxy
+
+            echo "=== Deploying runtime binary ==="
             sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
-            echo "=== Deploying new service file ==="
+
+            echo "=== Deploying proxy binary ==="
+            sudo mv /tmp/artifacts/proxy /opt/faas-engine/proxy
+            sudo chmod +x /opt/faas-engine/proxy
+
+            echo "=== Deploying runtime service ==="
             sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
+
+            echo "=== Deploying proxy service ==="
+            sudo mv /tmp/artifacts/faas-proxy.service /etc/systemd/system/faas-proxy.service
+
             echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
+
+            echo "=== Enabling services ==="
             sudo systemctl enable faas-engine
-            echo "=== Starting service ==="
+            sudo systemctl enable faas-proxy
+
+            echo "=== Starting services ==="
             sudo systemctl restart faas-engine
-            echo "=== Checking Service Status ==="
+            sudo systemctl restart faas-proxy
+
+            echo "=== Checking runtime service ==="
             if ! sudo systemctl is-active --quiet faas-engine; then
-              echo "Service failed to start"
+              echo "Runtime failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
               exit 1
             fi
-            echo "Service deployed successfully"
+
+            echo "=== Checking proxy service ==="
+            if ! sudo systemctl is-active --quiet faas-proxy; then
+              echo "Proxy failed to start"
+              sudo journalctl -u faas-proxy -n 50 --no-pager
+              exit 1
+            fi
+
+            echo "=== Deployment Successful ==="
