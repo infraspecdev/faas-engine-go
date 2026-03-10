@@ -93,7 +93,6 @@ func (d *DockerClient) CreateContainer(
 					},
 				},
 			},
-			AutoRemove: true,
 		},
 		Name: containerName,
 	}
@@ -144,8 +143,6 @@ func (d *DockerClient) DeleteContainer(ctx context.Context, containerID string) 
 	if err != nil {
 		return fmt.Errorf("failed to delete container: %w", err)
 	}
-
-	slog.Info("container deleted", "id", containerID)
 
 	return nil
 }

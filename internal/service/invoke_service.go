@@ -61,6 +61,12 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 			} else {
 				logger.Info("container_lifecycle", "stage", "stopped")
 			}
+
+			if err := f.containerClient.DeleteContainer(cleanupCtx, containerId); err != nil {
+				logger.Error("container_delete_failed", "error", err)
+			} else {
+				logger.Info("container_lifecycle", "stage", "deleted")
+			}
 		}()
 	}()
 
