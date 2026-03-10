@@ -41,7 +41,9 @@ func TestDeployHandler_InvalidSize(t *testing.T) {
 	if err := writer.WriteField("name", "test-fn"); err != nil {
 		t.Fatalf("failed to write name field: %v", err)
 	}
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -74,8 +76,9 @@ func TestDeployHandler_Success(t *testing.T) {
 		t.Fatalf("failed to write field: %v", err)
 	}
 
-	writer.WriteField("name", "test-fn")
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -105,7 +108,9 @@ func TestDeployHandler_MissingFile(t *testing.T) {
 		t.Fatalf("failed to write field: %v", err)
 	}
 
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
@@ -136,7 +141,9 @@ func TestDeployHandler_InternalError(t *testing.T) {
 	if err := writer.WriteField("name", "test-fn"); err != nil {
 		t.Fatalf("failed to write field: %v", err)
 	}
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		t.Fatalf("failed to close writer: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())

@@ -6,6 +6,7 @@ import (
 	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
+	"log"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -31,8 +32,18 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 
 	go func() {
 		tw := tar.NewWriter(pw)
-		defer pw.Close()
-		defer tw.Close()
+
+		defer func() {
+			if err := pw.Close(); err != nil {
+				log.Printf("failed to close pipe writer: %v", err)
+			}
+		}()
+
+		defer func() {
+			if err := tw.Close(); err != nil {
+				log.Printf("failed to close tar writer: %v", err)
+			}
+		}()
 
 		err := filepath.Walk(dirPath, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -67,7 +78,11 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 			if err != nil {
 				return err
 			}
-			defer file.Close()
+			defer func() {
+				if err := file.Close(); err != nil {
+					log.Printf("failed to close file: %v", err)
+				}
+			}()
 
 			if _, err := io.Copy(tw, file); err != nil {
 				return fmt.Errorf("failed copying %s: %w", relPath, err)
@@ -119,8 +134,6 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 	writer := multipart.NewWriter(pw)
 
 	go func() {
-		defer pw.Close()
-		defer writer.Close()
 
 		part, err := writer.CreateFormFile("file", "function.tar")
 		if err != nil {
@@ -139,6 +152,15 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 			pw.CloseWithError(err)
 			return
 		}
+
+		if err := writer.Close(); err != nil {
+			pw.CloseWithError(err)
+			return
+		}
+
+		if err := pw.Close(); err != nil {
+			log.Printf("failed to close pipe writer: %v", err)
+		}
 	}()
 
 	req, err := http.NewRequest("POST", url, pr)
@@ -153,7 +175,11 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) (string
 	if err != nil {
 		return "", err
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			log.Printf("failed to close response body: %v", err)
+		}
+	}()
 
 	var response types.DeployResponse
 

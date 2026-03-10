@@ -32,7 +32,11 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			})
 			return
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Printf("failed to close file: %v", err)
+			}
+		}()
 
 		name := r.FormValue("name")
 		if name == "" {

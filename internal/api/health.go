@@ -7,7 +7,10 @@ import (
 )
 
 func HealthHandler(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprintf(w, "OK")
+	if _, err := fmt.Fprintf(w, "OK"); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 }
 
 func GreetHandler(w http.ResponseWriter, r *http.Request) {
