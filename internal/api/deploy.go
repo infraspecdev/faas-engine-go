@@ -51,11 +51,11 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 
 		err = deployer.Deploy(r.Context(), name, file, out)
 		if err != nil {
-			fmt.Fprintf(out, "\nERROR: %s\n", err)
+			_, _ = fmt.Fprintf(out, "\nERROR: %s\n", err)
 			return
 		}
 
-		fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n", name)
+		_, _ = fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n", name)
 	}
 }
 

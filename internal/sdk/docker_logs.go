@@ -45,7 +45,7 @@ func streamDockerLogs(r io.Reader, out io.Writer) error {
 
 			if strings.HasPrefix(line, "--->") && prevLine != "" {
 				hash := strings.TrimSpace(strings.TrimPrefix(line, "--->"))
-				fmt.Fprintf(out, "%s → %s\n", prevLine, hash)
+				_, _ = fmt.Fprintf(out, "%s → %s\n", prevLine, hash)
 				prevLine = ""
 				continue
 			}
@@ -55,7 +55,7 @@ func streamDockerLogs(r io.Reader, out io.Writer) error {
 				continue
 			}
 
-			fmt.Fprintln(out, line)
+			_, _ = fmt.Fprintln(out, line)
 		}
 
 		if msg.Status != "" {
@@ -67,13 +67,13 @@ func streamDockerLogs(r io.Reader, out io.Writer) error {
 			if msg.ID != "" {
 
 				if msg.Progress != "" {
-					fmt.Fprintf(out, "%s: %s %s\n", msg.ID, msg.Status, msg.Progress)
+					_, _ = fmt.Fprintf(out, "%s: %s %s\n", msg.ID, msg.Status, msg.Progress)
 				} else {
-					fmt.Fprintf(out, "%s: %s\n", msg.ID, msg.Status)
+					_, _ = fmt.Fprintf(out, "%s: %s\n", msg.ID, msg.Status)
 				}
 
 			} else {
-				fmt.Fprintln(out, msg.Status)
+				_, _ = fmt.Fprintln(out, msg.Status)
 			}
 		}
 	}

@@ -33,7 +33,10 @@ to quickly create a Cobra application.`,
 		if err != nil {
 			return fmt.Errorf("failed to create tar stream: %w", err)
 		}
-		color.New(color.FgGreen).Println(" Done.")
+
+		if _, err := color.New(color.FgGreen).Println(" Done."); err != nil {
+			return fmt.Errorf("failed to print success message: %w", err)
+		}
 
 		//send the tarstream to the server
 		url := fmt.Sprintf("%s/functions", serverAddr)

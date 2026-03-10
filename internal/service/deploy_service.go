@@ -27,9 +27,9 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 	logger := slog.With("function", name)
 
 	cyan := color.New(color.FgCyan)
-	fmt.Fprint(out, "\n[2/3] Building image ")
-	cyan.Fprintf(out, "\"func-%s\"", name)
-	fmt.Fprint(out, "...\n\n")
+	_, _ = fmt.Fprint(out, "\n[2/3] Building image ")
+	_, _ = cyan.Fprintf(out, "\"func-%s\"", name)
+	_, _ = fmt.Fprint(out, "...\n\n")
 
 	logger.Info("image_lifecycle", "stage", "building")
 	if err := d.imageClient.BuildImage(ctx, name, file, out); err != nil {
@@ -43,17 +43,21 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
-	fmt.Fprint(out, "...")
-	color.New(color.FgGreen).Fprintln(out, " Done.")
+	_, _ = fmt.Fprint(out, "...")
+	if _, err := color.New(color.FgGreen).Fprintln(out, " Done."); err != nil {
+		return err
+	}
 
-	fmt.Fprint(out, "\n[3/3] Pushing image...")
+	_, _ = fmt.Fprint(out, "\n[3/3] Pushing image...")
 
 	logger.Info("image_lifecycle", "stage", "pushing")
 	if err := d.imageClient.PushImage(ctx, target); err != nil {
 		return err
 	}
 
-	color.New(color.FgGreen).Fprintln(out, " Done.")
+	if _, err := color.New(color.FgGreen).Fprintln(out, " Done."); err != nil {
+		return err
+	}
 
 	logger.Info("image_lifecycle", "stage", "removing_local")
 	if err := d.imageClient.RemoveImage(ctx, name); err != nil {

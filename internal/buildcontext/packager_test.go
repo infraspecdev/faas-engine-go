@@ -200,9 +200,9 @@ func TestSendTarStream_Success(t *testing.T) {
 		}
 
 		// simulate streaming deploy output
-		fmt.Fprintln(w, "[1/3] Packaging function code... Done.")
-		fmt.Fprintln(w, "[2/3] Building image... Done.")
-		fmt.Fprintln(w, "[3/3] Pushing image... Done.")
+		_, _ = fmt.Fprintln(w, "[1/3] Packaging function code... Done.")
+		_, _ = fmt.Fprintln(w, "[2/3] Building image... Done.")
+		_, _ = fmt.Fprintln(w, "[3/3] Pushing image... Done.")
 	}))
 	defer server.Close()
 
