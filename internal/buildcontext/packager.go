@@ -6,6 +6,7 @@ import (
 	"faas-engine-go/internal/types"
 	"fmt"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"os"
@@ -81,7 +82,7 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 
 		// Inject Dockerfile only if not present
 		if !dockerfileExists {
-
+			slog.Info("No Dockerfile found, injecting default Dockerfile into build context")
 			baseImage := "localhost:5000/runtimes/node:v1" // should make it configurable
 
 			dockerfile := fmt.Sprintf(

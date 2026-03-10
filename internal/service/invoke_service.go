@@ -33,7 +33,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	defer func() {
 		go func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
 			if err := sdk.StopContainer(cleanupCtx, cli, containerId); err != nil {
 				fmt.Println("Error stopping container:", err)
@@ -46,7 +46,9 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	}
 
 	port, err := network.ParsePort("8080/tcp")
-
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse port: %w", err)
+	}
 	var hostPort string
 
 	deadline := time.Now().Add(10 * time.Second)
@@ -68,9 +70,6 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	for time.Now().Before(healthDeadline) {
 		inspect, err := cli.ContainerInspect(ctx, containerId, client.ContainerInspectOptions{})
-		// fmt.Println("container id:", containerId)
-		// fmt.Println("Container Health Status:", inspect.Container.State.Health.Status)
-		// fmt.Println("container state:", inspect.Container.State.Health.Log)
 		if err == nil &&
 			inspect.Container.State != nil &&
 			inspect.Container.State.Health != nil &&

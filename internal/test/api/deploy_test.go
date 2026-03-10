@@ -34,9 +34,13 @@ func TestDeployHandler_InvalidSize(t *testing.T) {
 	}
 
 	large := make([]byte, 51<<20)
-	part.Write(large)
+	if _, err := part.Write(large); err != nil {
+		t.Fatal(err)
+	}
 
-	writer.WriteField("name", "test-fn")
+	if err := writer.WriteField("name", "test-fn"); err != nil {
+		t.Fatalf("failed to write name field: %v", err)
+	}
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
@@ -62,7 +66,13 @@ func TestDeployHandler_Success(t *testing.T) {
 	}
 
 	data := make([]byte, 1<<20)
-	part.Write(data)
+	if _, err := part.Write(data); err != nil {
+		t.Fatalf("failed to write file part: %v", err)
+	}
+
+	if err := writer.WriteField("name", "test-fn"); err != nil {
+		t.Fatalf("failed to write field: %v", err)
+	}
 
 	writer.WriteField("name", "test-fn")
 	writer.Close()
@@ -91,7 +101,10 @@ func TestDeployHandler_MissingFile(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	writer.WriteField("name", "test-fn")
+	if err := writer.WriteField("name", "test-fn"); err != nil {
+		t.Fatalf("failed to write field: %v", err)
+	}
+
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
@@ -116,9 +129,13 @@ func TestDeployHandler_InternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	part.Write([]byte("valid small content"))
+	if _, err := part.Write([]byte("valid small content")); err != nil {
+		t.Fatalf("failed to write payload: %v", err)
+	}
 
-	writer.WriteField("name", "test-fn")
+	if err := writer.WriteField("name", "test-fn"); err != nil {
+		t.Fatalf("failed to write field: %v", err)
+	}
 	writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
