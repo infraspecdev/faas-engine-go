@@ -7,12 +7,12 @@ import (
 	"faas-engine-go/internal/config"
 	"net/http"
 	"net/netip"
+	"time"
 
 	// "encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
-	"slices"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -48,27 +48,17 @@ func (d *DockerClient) CreateContainer(
 	command []string,
 ) (string, error) {
 
-	out, err := d.cli.ContainerList(ctx, client.ContainerListOptions{
-		All: true,
-	})
-	if err != nil {
-		return "", fmt.Errorf("failed to list containers: %w", err)
-	}
+	// out, err := d.cli.ContainerList(ctx, client.ContainerListOptions{
+	// 	All: true,
+	// })
+	// if err != nil {
+	// 	return "", fmt.Errorf("failed to list containers: %w", err)
+	// }
 
 	if imageName == "" {
 		return "", fmt.Errorf("image name cannot be empty")
 	}
-
-	for _, container := range out.Items {
-		if slices.Contains(container.Names, "/"+containerName) {
-			slog.Info("container already exists",
-				"name", containerName,
-				"id", container.ID,
-			)
-
-			return container.ID, nil
-		}
-	}
+	containerName = fmt.Sprintf("%s-%d", containerName, time.Now().UnixNano())
 
 	containerPort, err := network.ParsePort(config.ContainerPort)
 	if err != nil {

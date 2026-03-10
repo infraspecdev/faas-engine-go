@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"faas-engine-go/internal/config"
+	"faas-engine-go/internal/db"
 	"faas-engine-go/internal/sdk"
 	"fmt"
 	"log/slog"
@@ -29,6 +30,27 @@ func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvok
 // It waits for the container to become healthy before sending the invocation request.
 // The container is cleaned up asynchronously after invocation.
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte) (any, error) {
+
+	db.PrintContainerMap()
+	container := db.GetFreeContainer(functionName)
+
+	if container != nil {
+
+		logger := slog.With(
+			"container_id", container.ID,
+			"function", functionName,
+		)
+
+		logger.Info("container_lifecycle", "stage", "reusing")
+
+		db.MarkBusy(container.ID)
+		defer func() {
+			db.MarkFree(container.ID)
+			db.PrintContainerMap()
+		}()
+
+		return f.invokeFunc(ctx, container.HostPort, payload)
+	}
 
 	target := config.ImageRef(config.FunctionsRepo, functionName, "")
 
@@ -67,6 +89,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 			} else {
 				logger.Info("container_lifecycle", "stage", "deleted")
 			}
+			db.RemoveContainer(containerId)
+
 		}()
 	}()
 
@@ -128,7 +152,18 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	logger.Info("container_lifecycle", "stage", "healthy")
 
+	db.AddContainer(&db.Container{
+		ID:           containerId,
+		FunctionName: functionName,
+		Status:       "busy",
+		HostPort:     hostPort,
+	})
+
 	logger.Info("container_lifecycle", "stage", "invoking")
 
-	return f.invokeFunc(ctx, hostPort, payload)
+	res, err := f.invokeFunc(ctx, hostPort, payload)
+
+	defer db.MarkFree(containerId)
+
+	return res, err
 }
