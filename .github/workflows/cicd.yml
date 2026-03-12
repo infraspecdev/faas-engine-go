@@ -153,12 +153,7 @@ jobs:
             echo "Connected to server"
             whoami
             hostname
-      - name: Debug artifacts before SCP
-        run: |
-          echo "=== Workspace ==="  
-          ls -la
-          echo "=== Artifacts ==="
-          ls -la artifacts
+
       - name: Prepare deployment directory
         uses: appleboy/ssh-action@v1
         with:
@@ -199,7 +194,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Copy service file to server
         uses: appleboy/scp-action@v0.1.7
@@ -209,7 +203,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1

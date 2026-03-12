@@ -129,67 +129,6 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 	return pr, nil
 }
 
-// func SendTarStream(tarStream io.Reader, url string, functionName string) (string, error) {
-
-// 	pr, pw := io.Pipe()
-// 	writer := multipart.NewWriter(pw)
-
-// 	go func() {
-// 		defer pw.Close()
-// 		defer writer.Close()
-
-// 		part, err := writer.CreateFormFile("file", "function.tar")
-// 		if err != nil {
-// 			pw.CloseWithError(err)
-// 			return
-// 		}
-
-// 		_, err = io.Copy(part, tarStream)
-// 		if err != nil {
-// 			pw.CloseWithError(err)
-// 			return
-// 		}
-
-// 		err = writer.WriteField("name", functionName)
-// 		if err != nil {
-// 			pw.CloseWithError(err)
-// 			return
-// 		}
-// 	}()
-
-// 	req, err := http.NewRequest("POST", url, pr)
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	req.Header.Set("Content-Type", writer.FormDataContentType())
-
-// 	client := &http.Client{}
-// 	resp, err := client.Do(req)
-// 	if err != nil {
-// 		return "", err
-// 	}
-// 	defer resp.Body.Close()
-
-// 	var response types.DeployResponse
-
-// 	if resp.StatusCode != http.StatusOK {
-// 		body, _ := io.ReadAll(resp.Body)
-// 		return "", fmt.Errorf("server returned %s: %s", resp.Status, string(body))
-// 	}
-
-// 	err = json.NewDecoder(resp.Body).Decode(&response)
-// 	if err != nil {
-// 		return "", err
-// 	}
-
-// 	if resp.StatusCode != http.StatusOK {
-// 		return "", fmt.Errorf("server returned %s", resp.Status)
-// 	}
-
-// 	return response.Message, err
-// }
-
 func SendTarStream(tarStream io.Reader, url string, functionName string) error {
 
 	pr, pw := io.Pipe()

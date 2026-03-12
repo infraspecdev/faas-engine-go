@@ -7,6 +7,7 @@ import (
 	"faas-engine-go/internal/config"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/moby/moby/api/types/image"
@@ -36,7 +37,7 @@ func (d *DockerClient) PullImage(ctx context.Context, imageName string) error {
 
 	defer func() {
 		if err := imageRef.Close(); err != nil {
-			fmt.Printf("failed to close image reference: %v", err)
+			slog.Error("failed to close image reference", "error", err)
 		}
 	}()
 
@@ -74,7 +75,7 @@ func (d *DockerClient) BuildImage(
 
 	defer func() {
 		if err := image.Body.Close(); err != nil {
-			fmt.Printf("failed to close image body: %v", err)
+			slog.Error("failed to close image body", "error", err)
 		}
 	}()
 
@@ -109,11 +110,7 @@ func (d *DockerClient) CheckImageName(ctx context.Context, imageName string) err
 			// Remove version tag
 			nameWithoutTag := strings.Split(tag, ":")[0]
 
-			// Extract last segment
-			parts := strings.Split(nameWithoutTag, "/")
-			existingName := parts[len(parts)-1]
-
-			if existingName == imageName {
+			if nameWithoutTag == imageName {
 				return fmt.Errorf("image name '%s' already exists", imageName)
 			}
 		}
@@ -141,9 +138,18 @@ func (d *DockerClient) TagImage(ctx context.Context, source string, target strin
 // Returns an error if the push fails.
 func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 
+	// This implementation supports both anonymous and authenticated registries.
+	// If DOCKER_USERNAME and DOCKER_PASSWORD environment variables are set,
+	// they will be used for registry authentication.
+	// Otherwise, the push will proceed anonymously (works for local registries
+	// like localhost:5000 used during development).
+
+	username := config.RegistryUsername()
+	password := config.RegistryPassword()
+
 	auth := map[string]string{
-		"username":      "",
-		"password":      "",
+		"username":      username,
+		"password":      password,
 		"serveraddress": config.Registry(),
 	}
 
@@ -163,7 +169,7 @@ func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 
 	defer func() {
 		if err := imagePush.Close(); err != nil {
-			fmt.Printf("failed to close image push stream: %v", err)
+			slog.Error("failed to close image push stream", "error", err)
 		}
 	}()
 

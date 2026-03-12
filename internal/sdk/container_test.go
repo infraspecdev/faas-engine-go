@@ -2,24 +2,35 @@ package sdk
 
 import (
 	"context"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/moby/moby/client"
 )
 
 func setupDocker(t *testing.T) (context.Context, *DockerClient, func()) {
 	t.Helper()
 
+	// silence logs during tests
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
 
 	ctx, cli, cancel, err := Init(context.Background())
 	if err != nil {
 		t.Fatalf("failed to init sdk: %v", err)
 	}
+
+	// ensure docker daemon is reachable
+	if _, err := cli.Ping(ctx, client.PingOptions{}); err != nil {
+		cancel()
+		t.Fatalf("docker engine not running: %v", err)
+	}
+
+	// guarantee cleanup even if test fails
+	t.Cleanup(cancel)
 
 	docker := NewDockerClient(cli)
 
@@ -154,16 +165,16 @@ func TestStatsContainer_Success(t *testing.T) {
 		t.Fatalf("failed to start container: %v", err)
 	}
 
-	fmt.Println("Container started, fetching stats...")
+	t.Log("Container started, fetching stats...")
 
-	// stats, err := docker.StatsContainer(ctx, id)
-	// if err != nil {
-	// 	t.Fatalf("unexpected error: %v", err)
-	// }
+	stats, err := docker.StatsContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 
-	// if len(stats) == 0 {
-	// 	t.Fatal("expected stats data but got empty")
-	// }
+	if len(stats) == 0 {
+		t.Fatal("expected stats data but got empty")
+	}
 }
 
 func TestStatsContainer_Fail(t *testing.T) {

@@ -209,6 +209,10 @@ func (d *DockerClient) InspectContainer(
 // It forwards the provided JSON payload and expects a JSON response.
 // Returns a decoded JSON map or an error if the request fails or the container
 // returns a non-200 status.
+// Unlike other functions in this package, InvokeContainer is not implemented
+// as a DockerClient method because it does not interact with the Docker API.
+// Instead, it communicates directly with the HTTP endpoint exposed by the
+// running container's runtime (e.g. Node/Python function runtime).
 func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
 
 	url := fmt.Sprintf("http://localhost:%s/", hostPort)

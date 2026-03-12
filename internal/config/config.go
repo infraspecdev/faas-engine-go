@@ -8,12 +8,21 @@ import (
 // Registry returns the configured registry address for pushing function images.
 // It checks the FAAS_REGISTRY environment variable and defaults to "localhost:5000" if not set.
 func Registry() string {
-
 	reg := os.Getenv("FAAS_REGISTRY")
 	if reg == "" {
 		return "localhost:5000"
 	}
 	return reg
+}
+
+// RegistryUsername returns the registry username if configured.
+func RegistryUsername() string {
+	return os.Getenv("REGISTRY_USERNAME")
+}
+
+// RegistryPassword returns the registry password if configured.
+func RegistryPassword() string {
+	return os.Getenv("REGISTRY_PASSWORD")
 }
 
 // ImageRef constructs a full image reference for a function image based on the registry, namespace, name, and tag.
