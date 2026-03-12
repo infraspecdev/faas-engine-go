@@ -33,6 +33,13 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	defer func() {
 		go func() {
+			// cleanupTimeout defines how long we wait for the container to stop
+			// after a function invocation completes.
+			//
+			// This was increased from 5 seconds to 12 seconds because container
+			// shutdown can take longer depending on runtime workload and Docker
+			// stop latency. The longer timeout helps avoid premature termination
+			// while still bounding the cleanup duration.
 			cleanupCtx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
 			defer cancel()
 			if err := sdk.StopContainer(cleanupCtx, cli, containerId); err != nil {

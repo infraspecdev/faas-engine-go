@@ -57,7 +57,7 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 	if _, err := io.Copy(os.Stdout, image.Body); err != nil {
 		return fmt.Errorf("failed to read build output: %w", err)
 	}
-
+	//image pruning after build to clean up dangling images
 	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
 	if err != nil {
 		return err

@@ -52,17 +52,19 @@ func main() {
 
 	// Create server instance
 	srv := &http.Server{
-		Addr:    ":" + port, // ":"  = 0.0.0.0
+		Addr:    ":" + port,
 		Handler: r,
 	}
+
+	// Channel to capture server errors
+	errCh := make(chan error, 1)
 
 	// Run server in background
 	go func() {
 		slog.Info("starting server", "port", port)
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			slog.Error("server error", "error", err)
-			os.Exit(1)
+			errCh <- err
 		}
 	}()
 
@@ -70,10 +72,15 @@ func main() {
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
-	<-quit
-	slog.Info("shutdown signal received")
+	select {
+	case sig := <-quit:
+		slog.Info("shutdown signal received", "signal", sig)
 
-	// Create timeout context for graceful shutdown
+	case err := <-errCh:
+		slog.Error("server error", "error", err)
+	}
+
+	// Graceful shutdown
 	ctx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
