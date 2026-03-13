@@ -17,6 +17,7 @@ const (
 	HealthTimeout        time.Duration = 10 * time.Second
 	InvokeHTTPTimeout    time.Duration = 10 * time.Second
 	ContainerStopTimeout time.Duration = 10 * time.Second
+	ContainerIdleTimeout time.Duration = 10 * time.Second
 )
 
 // registry related constants

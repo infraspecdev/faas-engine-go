@@ -71,28 +71,28 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	logger.Info("container_lifecycle", "stage", "created")
 
-	defer func() {
-		go func() {
-			cleanupCtx, cancel := context.WithTimeout(context.Background(), config.CleanUpTimeout)
-			defer cancel()
+	// defer func() {
+	// 	go func() {
+	// 		cleanupCtx, cancel := context.WithTimeout(context.Background(), config.CleanUpTimeout)
+	// 		defer cancel()
 
-			logger.Info("container_lifecycle", "stage", "stopping")
+	// 		logger.Info("container_lifecycle", "stage", "stopping")
 
-			if err := f.containerClient.StopContainer(cleanupCtx, containerId); err != nil {
-				logger.Error("container_stop_failed", "error", err)
-			} else {
-				logger.Info("container_lifecycle", "stage", "stopped")
-			}
+	// 		if err := f.containerClient.StopContainer(cleanupCtx, containerId); err != nil {
+	// 			logger.Error("container_stop_failed", "error", err)
+	// 		} else {
+	// 			logger.Info("container_lifecycle", "stage", "stopped")
+	// 		}
 
-			if err := f.containerClient.DeleteContainer(cleanupCtx, containerId); err != nil {
-				logger.Error("container_delete_failed", "error", err)
-			} else {
-				logger.Info("container_lifecycle", "stage", "deleted")
-			}
-			db.RemoveContainer(containerId)
+	// 		if err := f.containerClient.DeleteContainer(cleanupCtx, containerId); err != nil {
+	// 			logger.Error("container_delete_failed", "error", err)
+	// 		} else {
+	// 			logger.Info("container_lifecycle", "stage", "deleted")
+	// 		}
+	// 		db.RemoveContainer(containerId)
 
-		}()
-	}()
+	// 	}()
+	// }()
 
 	if err := f.containerClient.StartContainer(ctx, containerId); err != nil {
 		logger.Error("container_start_failed", "error", err)

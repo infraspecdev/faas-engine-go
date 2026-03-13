@@ -3,6 +3,7 @@ package db
 import (
 	"fmt"
 	"sync"
+	"time"
 )
 
 type Container struct {
@@ -10,6 +11,7 @@ type Container struct {
 	FunctionName string
 	Status       string
 	HostPort     string
+	LastUsed     time.Time
 }
 
 var (
@@ -32,6 +34,19 @@ func PrintContainerMap() {
 			)
 		}
 	}
+}
+
+func GetAllContainers() []*Container {
+	mu.Lock()
+	defer mu.Unlock()
+
+	var result []*Container
+
+	for _, containers := range ContainerMap {
+		result = append(result, containers...)
+	}
+
+	return result
 }
 
 func GetFreeContainer(functionName string) *Container {
@@ -59,6 +74,7 @@ func MarkFree(containerID string) {
 		for _, c := range containers {
 			if c.ID == containerID {
 				c.Status = "free"
+				c.LastUsed = time.Now()
 				return
 			}
 		}
@@ -104,5 +120,30 @@ func AddContainer(c *Container) {
 	mu.Lock()
 	defer mu.Unlock()
 
+	c.LastUsed = time.Now()
+
 	ContainerMap[c.FunctionName] = append(ContainerMap[c.FunctionName], c)
+}
+
+func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	for fn, containers := range ContainerMap {
+
+		var active []*Container
+
+		for _, c := range containers {
+
+			if c.Status == "free" && time.Since(c.LastUsed) > timeout {
+				go cleanup(c.ID)
+				continue
+			}
+
+			active = append(active, c)
+		}
+
+		ContainerMap[fn] = active
+	}
 }

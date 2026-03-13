@@ -37,6 +37,9 @@ func main() {
 
 	docker := sdk.NewDockerClient(cli)
 
+	// Start background container cleanup worker
+	service.ContainerSpleen(docker)
+
 	// Setup router
 	r := mux.NewRouter()
 
