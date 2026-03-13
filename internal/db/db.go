@@ -36,6 +36,13 @@ func PrintContainerMap() {
 	}
 }
 
+func ResetContainerMap() {
+	mu.Lock()
+	defer mu.Unlock()
+
+	ContainerMap = map[string][]*Container{}
+}
+
 func GetAllContainers() []*Container {
 	mu.Lock()
 	defer mu.Unlock()

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"faas-engine-go/internal/db"
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
@@ -155,7 +156,7 @@ func TestInvoke_PullImageFail(t *testing.T) {
 }
 
 func TestInvoke_CreateContainerFail(t *testing.T) {
-
+	db.ResetContainerMap()
 	img := &fakeImageClient{}
 
 	con := &fakeContainerClient{
