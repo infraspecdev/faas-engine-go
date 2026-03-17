@@ -4,6 +4,8 @@ import (
 	"context"
 	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
+	"faas-engine-go/internal/sqlite"
+	"faas-engine-go/internal/sqlite/store"
 	"fmt"
 	"io"
 	"log/slog"
@@ -36,7 +38,12 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
-	target := config.ImageRef(config.FunctionsRepo, name, "")
+	version, err := store.GetNextVersion(sqlite.DB, name)
+	if err != nil {
+		return err
+	}
+
+	target := config.ImageRef(config.FunctionsRepo, name, version)
 
 	logger.Info("image_lifecycle", "stage", "tagging")
 	if err := d.imageClient.TagImage(ctx, name, target); err != nil {

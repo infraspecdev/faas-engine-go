@@ -35,3 +35,4 @@ bin/
 
 tmp/
 
+internal/sqlite/faas-engine-go.db

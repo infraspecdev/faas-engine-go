@@ -5,6 +5,7 @@ import (
 	"faas-engine-go/internal/api"
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/service"
+	"faas-engine-go/internal/sqlite"
 	"log/slog"
 	"net/http"
 	"os"
@@ -39,6 +40,17 @@ func main() {
 
 	// Start background container cleanup worker
 	service.ContainerSpleen(docker)
+
+	// Initialize database (if needed)
+	if err := sqlite.InitDB(); err != nil {
+		slog.Error("failed to initialize database", "error", err)
+		os.Exit(1)
+	}
+
+	if err := sqlite.InitTables(); err != nil {
+		slog.Error("failed to initialize database tables", "error", err)
+		os.Exit(1)
+	}
 
 	// Setup router
 	r := mux.NewRouter()

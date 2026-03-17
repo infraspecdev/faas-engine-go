@@ -19,8 +19,5 @@ func Registry() string {
 // ImageRef constructs a full image reference for a function image based on the registry, namespace, name, and tag.
 // If the tag is empty, it defaults to "latest".
 func ImageRef(namespace, name, tag string) string {
-	if tag == "" {
-		tag = "latest"
-	}
 	return fmt.Sprintf("%s/%s/%s:%s", Registry(), namespace, name, tag)
 }
