@@ -22,16 +22,35 @@ func CreateInvocation(functionName string, payload []byte, trigger string) strin
 
 	id := uuid.New().String()
 
+	var parsed any
+	if err := json.Unmarshal(payload, &parsed); err != nil {
+		parsed = string(payload) // fallback
+	}
+
 	invocationStore[id] = types.Invocation{
 		ID:             id,
 		FunctionName:   functionName,
 		TriggerType:    trigger,
 		Status:         "running",
-		RequestPayload: payload,
+		RequestPayload: parsed,
 		StartedAt:      time.Now(),
 	}
 
 	return id
+}
+
+// SET CONTAINER ID
+func SetContainerID(id string, containerID string) {
+	invocationMu.Lock()
+	defer invocationMu.Unlock()
+
+	inv, ok := invocationStore[id]
+	if !ok {
+		return
+	}
+
+	inv.ContainerID = containerID
+	invocationStore[id] = inv
 }
 
 // COMPLETE (SUCCESS)
@@ -44,10 +63,8 @@ func CompleteInvocation(id string, response any, duration time.Duration) {
 		return
 	}
 
-	resBytes, _ := json.Marshal(response)
-
 	inv.Status = "success"
-	inv.ResponsePayload = resBytes
+	inv.ResponsePayload = response
 	inv.DurationMs = duration.Milliseconds()
 	inv.FinishedAt = time.Now()
 
@@ -65,7 +82,7 @@ func FailInvocation(id string, errMsg string, duration time.Duration) {
 	}
 
 	inv.Status = "failed"
-	inv.ResponsePayload = nil
+	inv.ResponsePayload = errMsg
 	inv.DurationMs = duration.Milliseconds()
 	inv.FinishedAt = time.Now()
 

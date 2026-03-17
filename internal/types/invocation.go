@@ -3,23 +3,23 @@ package types
 import "time"
 
 type Invocation struct {
-	ID string
+	ID string `json:"id"`
 
-	FunctionName string
-	ContainerID  string
+	FunctionName string `json:"function_name"`
+	ContainerID  string `json:"container_id"`
 
-	TriggerType string // "http" | "cron" | "manual"
+	TriggerType string `json:"trigger_type"`
 
-	Status   string // "running" | "success" | "failed"
-	ExitCode int
+	Status   string `json:"status"`
+	ExitCode int    `json:"exit_code"`
 
-	DurationMs int64
+	DurationMs int64 `json:"duration_ms"`
 
-	RequestPayload  []byte // JSON
-	ResponsePayload []byte // JSON
+	RequestPayload  any `json:"request_payload"`
+	ResponsePayload any `json:"response_payload"`
 
-	LogsPath string
+	LogsPath string `json:"logs_path"`
 
-	StartedAt  time.Time
-	FinishedAt time.Time
+	StartedAt  time.Time `json:"started_at"`
+	FinishedAt time.Time `json:"finished_at"`
 }

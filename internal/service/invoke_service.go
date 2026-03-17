@@ -50,6 +50,9 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		logger.Info("container_lifecycle", "stage", "reusing")
 
 		db.MarkBusy(container.ID)
+
+		db.SetContainerID(invID, container.ID)
+
 		defer func() {
 			db.MarkFree(container.ID)
 			db.PrintContainerMap()
@@ -88,6 +91,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		slog.Error("container_create_failed", "function", functionName, "error", err)
 		return nil, err
 	}
+
+	db.SetContainerID(invID, containerId)
 
 	logger := slog.With("container_id", containerId, "function", functionName)
 
@@ -158,6 +163,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		HostPort:     hostPort,
 	})
 
+	defer db.MarkFree(containerId)
+
 	logger.Info("container_lifecycle", "stage", "invoking")
 
 	res, err := f.invokeFunc(ctx, hostPort, payload)
@@ -169,8 +176,6 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	} else {
 		db.CompleteInvocation(invID, res, duration)
 	}
-
-	defer db.MarkFree(containerId)
 
 	return res, err
 }
