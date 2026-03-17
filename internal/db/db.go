@@ -133,24 +133,28 @@ func AddContainer(c *Container) {
 }
 
 func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
-
 	mu.Lock()
-	defer mu.Unlock()
+
+	var toCleanup []string
 
 	for fn, containers := range ContainerMap {
-
 		var active []*Container
 
 		for _, c := range containers {
-
 			if c.Status == "free" && time.Since(c.LastUsed) > timeout {
-				go cleanup(c.ID)
+				toCleanup = append(toCleanup, c.ID)
 				continue
 			}
-
 			active = append(active, c)
 		}
 
 		ContainerMap[fn] = active
+	}
+
+	mu.Unlock()
+
+	// Run cleanup AFTER releasing lock
+	for _, id := range toCleanup {
+		go cleanup(id)
 	}
 }

@@ -50,6 +50,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&serverAddr,
 		"server",
+		// "http://10.30.20.196:8080",
 		"http://localhost:8080",
 		"Address of the runtime manager server",
 	)

@@ -44,15 +44,19 @@ func main() {
 	r := mux.NewRouter()
 
 	realDeployer := service.NewDeployer(docker)
-	invokeInvoker := service.NewFunctionInvoker(docker, docker)
+	functionInvoker := service.NewFunctionInvoker(docker, docker)
+
+	scheduler := service.NewSchedulerService(functionInvoker)
+	scheduler.Start()
 
 	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(realDeployer)).Methods("POST")
-	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(functionInvoker)).Methods("POST")
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
-
+	r.HandleFunc("/functions/{functionName}/schedule", api.ScheduleHandler(scheduler)).Methods("POST")
+	r.HandleFunc("/invocations", api.ListInvocationsHandler).Methods("GET")
 	// Create server instance
 	srv := &http.Server{
 		Addr:    ":" + port, // ":"  = 0.0.0.0

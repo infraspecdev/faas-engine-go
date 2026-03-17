@@ -31,9 +31,15 @@ func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvok
 // The container is cleaned up asynchronously after invocation.
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte) (any, error) {
 
+	invID := db.CreateInvocation(functionName, payload, "http")
+	start := time.Now()
+
 	db.PrintContainerMap()
 	container := db.GetFreeContainer(functionName)
 
+	// ----------------------
+	// REUSE CONTAINER
+	// ----------------------
 	if container != nil {
 
 		logger := slog.With(
@@ -49,20 +55,36 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 			db.PrintContainerMap()
 		}()
 
-		return f.invokeFunc(ctx, container.HostPort, payload)
+		res, err := f.invokeFunc(ctx, container.HostPort, payload)
+
+		duration := time.Since(start)
+
+		if err != nil {
+			db.FailInvocation(invID, err.Error(), duration)
+		} else {
+			db.CompleteInvocation(invID, res, duration)
+		}
+
+		return res, err
 	}
+
+	// ----------------------
+	// COLD START PATH
+	// ----------------------
 
 	target := config.ImageRef(config.FunctionsRepo, functionName, "")
 
 	slog.Info("container_lifecycle", "stage", "pulling", "function", functionName)
 
 	if err := f.imageClient.PullImage(ctx, target); err != nil {
+		db.FailInvocation(invID, err.Error(), time.Since(start))
 		slog.Error("image_pull_failed", "function", functionName, "error", err)
 		return nil, err
 	}
 
 	containerId, err := f.containerClient.CreateContainer(ctx, functionName, target, nil)
 	if err != nil {
+		db.FailInvocation(invID, err.Error(), time.Since(start))
 		slog.Error("container_create_failed", "function", functionName, "error", err)
 		return nil, err
 	}
@@ -71,30 +93,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	logger.Info("container_lifecycle", "stage", "created")
 
-	// defer func() {
-	// 	go func() {
-	// 		cleanupCtx, cancel := context.WithTimeout(context.Background(), config.CleanUpTimeout)
-	// 		defer cancel()
-
-	// 		logger.Info("container_lifecycle", "stage", "stopping")
-
-	// 		if err := f.containerClient.StopContainer(cleanupCtx, containerId); err != nil {
-	// 			logger.Error("container_stop_failed", "error", err)
-	// 		} else {
-	// 			logger.Info("container_lifecycle", "stage", "stopped")
-	// 		}
-
-	// 		if err := f.containerClient.DeleteContainer(cleanupCtx, containerId); err != nil {
-	// 			logger.Error("container_delete_failed", "error", err)
-	// 		} else {
-	// 			logger.Info("container_lifecycle", "stage", "deleted")
-	// 		}
-	// 		db.RemoveContainer(containerId)
-
-	// 	}()
-	// }()
-
 	if err := f.containerClient.StartContainer(ctx, containerId); err != nil {
+		db.FailInvocation(invID, err.Error(), time.Since(start))
 		logger.Error("container_start_failed", "error", err)
 		return nil, err
 	}
@@ -103,6 +103,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	port, err := network.ParsePort(config.ContainerPort)
 	if err != nil {
+		db.FailInvocation(invID, err.Error(), time.Since(start))
 		return nil, fmt.Errorf("failed to parse port: %w", err)
 	}
 
@@ -110,7 +111,6 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	portDeadline := time.Now().Add(config.PortTimeout)
 
 	for time.Now().Before(portDeadline) {
-
 		inspect, err := f.containerClient.InspectContainer(ctx, containerId)
 
 		if err == nil && inspect.Container.NetworkSettings != nil {
@@ -128,7 +128,6 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	healthy := false
 
 	for time.Now().Before(healthDeadline) {
-
 		inspect, err := f.containerClient.InspectContainer(ctx, containerId)
 
 		if err == nil &&
@@ -144,10 +143,10 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	}
 
 	if !healthy {
-		logger.Error("container_unhealthy",
-			"timeout", config.HealthTimeout,
-		)
-		return nil, fmt.Errorf("container did not become healthy in time")
+		err := fmt.Errorf("container did not become healthy in time")
+		db.FailInvocation(invID, err.Error(), time.Since(start))
+		logger.Error("container_unhealthy", "timeout", config.HealthTimeout)
+		return nil, err
 	}
 
 	logger.Info("container_lifecycle", "stage", "healthy")
@@ -162,6 +161,14 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 	logger.Info("container_lifecycle", "stage", "invoking")
 
 	res, err := f.invokeFunc(ctx, hostPort, payload)
+
+	duration := time.Since(start)
+
+	if err != nil {
+		db.FailInvocation(invID, err.Error(), duration)
+	} else {
+		db.CompleteInvocation(invID, res, duration)
+	}
 
 	defer db.MarkFree(containerId)
 
