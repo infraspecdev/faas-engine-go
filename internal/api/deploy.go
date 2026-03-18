@@ -19,7 +19,31 @@ type Deployer interface {
 	Deploy(ctx context.Context, name string, file io.Reader, out io.Writer) error
 }
 
-func DeployHandler(deployer Deployer) http.HandlerFunc {
+type FunctionStore interface {
+	GetNextVersion(name string) (string, error)
+	DeactivateFunctions(name string) error
+	CreateFunction(fn *models.Function) error
+}
+
+type realFunctionStore struct{}
+
+func NewFunctionStore() FunctionStore {
+	return &realFunctionStore{}
+}
+
+func (r *realFunctionStore) GetNextVersion(name string) (string, error) {
+	return store.GetNextVersion(sqlite.DB, name)
+}
+
+func (r *realFunctionStore) DeactivateFunctions(name string) error {
+	return store.DeactivateFunctions(sqlite.DB, name)
+}
+
+func (r *realFunctionStore) CreateFunction(fn *models.Function) error {
+	return store.CreateFunction(sqlite.DB, fn)
+}
+
+func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		flusher, ok := w.(http.Flusher)
@@ -63,9 +87,17 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 
 		functionName, functionVersion, found := strings.Cut(nameParam, ":")
 		if !found {
-			functionVersion, err = store.GetNextVersion(sqlite.DB, functionName)
+			functionVersion, err = fs.GetNextVersion(functionName)
 			if err != nil {
 				slog.Error("failed to get latest version", "error", err)
+				return
+			}
+		}
+
+		if seeker, ok := file.(io.Seeker); ok {
+			_, err = seeker.Seek(0, io.SeekStart)
+			if err != nil {
+				slog.Error("failed to reset file", "error", err)
 				return
 			}
 		}
@@ -76,7 +108,7 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			return
 		}
 
-		err = store.DeactivateFunctions(sqlite.DB, functionName)
+		err = fs.DeactivateFunctions(functionName)
 		if err != nil {
 			slog.Error("failed to deactivate old versions", "error", err)
 		}
@@ -93,7 +125,7 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			CreatedAt:       time.Now(),
 		}
 
-		err = store.CreateFunction(sqlite.DB, fn)
+		err = fs.CreateFunction(fn)
 		if err != nil {
 			slog.Error("failed to store function", "error", err)
 			fmt.Fprintf(out, "\nWARNING: function deployed but DB insert failed\n")
@@ -116,13 +148,6 @@ func (f *flushWriter) Write(p []byte) (int, error) {
 
 func calculateCheckSum(file io.Reader) (string, error) {
 	hasher := sha256.New()
-
-	if seeker, ok := file.(io.Seeker); ok {
-		_, err := seeker.Seek(0, io.SeekStart)
-		if err != nil {
-			return "", err
-		}
-	}
 
 	_, err := io.Copy(hasher, file)
 	if err != nil {

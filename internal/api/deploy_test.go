@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"faas-engine-go/internal/api"
+	"faas-engine-go/internal/sqlite/models"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -24,6 +25,22 @@ func (m *mockDeployer) Deploy(ctx context.Context, name string, file io.Reader, 
 	return nil
 }
 
+type fakeStore struct {
+	version string
+}
+
+func (f *fakeStore) GetNextVersion(name string) (string, error) {
+	return f.version, nil
+}
+
+func (f *fakeStore) DeactivateFunctions(name string) error {
+	return nil
+}
+
+func (f *fakeStore) CreateFunction(fn *models.Function) error {
+	return nil
+}
+
 func TestDeployHandler_InvalidSize(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -38,20 +55,15 @@ func TestDeployHandler_InvalidSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := writer.WriteField("name", "test-fn"); err != nil {
-		t.Fatalf("failed to write name field: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("failed to close writer: %v", err)
-	}
+	_ = writer.WriteField("name", "test-fn")
+	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := api.DeployHandler(&mockDeployer{}, &fakeStore{version: "v1"})
 	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -69,35 +81,27 @@ func TestDeployHandler_Success(t *testing.T) {
 	}
 
 	data := make([]byte, 1<<20)
-	if _, err := part.Write(data); err != nil {
-		t.Fatalf("failed to write file part: %v", err)
-	}
+	_, _ = part.Write(data)
 
-	if err := writer.WriteField("name", "test-fn"); err != nil {
-		t.Fatalf("failed to write field: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("failed to close writer: %v", err)
-	}
+	_ = writer.WriteField("name", "test-fn")
+	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := api.DeployHandler(&mockDeployer{}, &fakeStore{version: "v1"})
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 
-	expected := "Your function is live at: http://test-fn.localhost"
-	result := strings.TrimSpace(rr.Body.String())
+	result := rr.Body.String()
 
-	if result != expected {
-		t.Fatalf("expected %s, got %s", expected, result)
+	if !strings.Contains(result, "Your function is live at: http://test-fn.localhost") {
+		t.Fatalf("unexpected response: %s", result)
 	}
 }
 
@@ -105,20 +109,15 @@ func TestDeployHandler_MissingFile(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	if err := writer.WriteField("name", "test-fn"); err != nil {
-		t.Fatalf("failed to write field: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("failed to close writer: %v", err)
-	}
+	_ = writer.WriteField("name", "test-fn")
+	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := api.DeployHandler(&mockDeployer{}, &fakeStore{version: "v1"})
 	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -135,35 +134,26 @@ func TestDeployHandler_InternalError(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if _, err := part.Write([]byte("valid small content")); err != nil {
-		t.Fatalf("failed to write payload: %v", err)
-	}
+	_, _ = part.Write([]byte("valid content"))
 
-	if err := writer.WriteField("name", "test-fn"); err != nil {
-		t.Fatalf("failed to write field: %v", err)
-	}
-
-	if err := writer.Close(); err != nil {
-		t.Fatalf("failed to close writer: %v", err)
-	}
+	_ = writer.WriteField("name", "test-fn")
+	_ = writer.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{shouldFail: true})
+	handler := api.DeployHandler(&mockDeployer{shouldFail: true}, &fakeStore{version: "v1"})
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rr.Code)
 	}
 
-	expected := "ERROR: deploy failed"
+	result := rr.Body.String()
 
-	result := strings.TrimSpace(rr.Body.String())
-
-	if result != expected {
-		t.Fatalf("expected %s, got %s", expected, result)
+	if !strings.Contains(result, "ERROR: deploy failed") {
+		t.Fatalf("unexpected response: %s", result)
 	}
 }

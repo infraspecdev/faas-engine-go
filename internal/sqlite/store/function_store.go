@@ -147,7 +147,7 @@ func GetLatestVersion(db *sql.DB, name string) (string, error) {
 	SELECT version
 	FROM functions
 	WHERE name = ?
-	ORDER BY created_at DESC
+	ORDER BY id DESC
 	LIMIT 1
 	`
 

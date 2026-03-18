@@ -87,9 +87,14 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 		container_id,
 		trigger_type,
 		status,
+		exit_code,
+		duration_ms,
 		request_payload,
-		started_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?)
+		response_payload,
+		logs_path,
+		started_at,
+		finished_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := db.Exec(
@@ -99,8 +104,13 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 		inv.ContainerID,
 		inv.TriggerType,
 		inv.Status,
+		inv.ExitCode,
+		inv.DurationMs,
 		inv.RequestPayload,
+		inv.ResponsePayload,
+		inv.LogsPath,
 		inv.StartedAt,
+		inv.FinishedAt,
 	)
 
 	return err

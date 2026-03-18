@@ -62,6 +62,9 @@ func TestDeploy_Success(t *testing.T) {
 	fake := &fakeImageClient{}
 
 	deployer := NewDeployer(fake)
+	deployer.getVersion = func(name string) (string, error) {
+		return "v1", nil
+	}
 
 	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
@@ -85,7 +88,7 @@ func TestDeploy_Success(t *testing.T) {
 		t.Fatal("RemoveImage was not called")
 	}
 
-	expectedTarget := config.ImageRef(config.FunctionsRepo, "hello", "")
+	expectedTarget := config.ImageRef(config.FunctionsRepo, "hello", "v1")
 
 	if fake.lastTagTarget != expectedTarget {
 		t.Fatalf("expected tag target %s, got %s", expectedTarget, fake.lastTagTarget)
@@ -100,6 +103,9 @@ func TestDeploy_BuildImageFail(t *testing.T) {
 	}
 
 	deployer := NewDeployer(fake)
+	deployer.getVersion = func(name string) (string, error) {
+		return "v1", nil
+	}
 
 	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
@@ -132,6 +138,9 @@ func TestDeploy_TagImageFail(t *testing.T) {
 	}
 
 	deployer := NewDeployer(fake)
+	deployer.getVersion = func(name string) (string, error) {
+		return "v1", nil
+	}
 
 	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
@@ -164,6 +173,9 @@ func TestDeploy_PushImageFail(t *testing.T) {
 	}
 
 	deployer := NewDeployer(fake)
+	deployer.getVersion = func(name string) (string, error) {
+		return "v1", nil
+	}
 
 	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 
@@ -196,6 +208,9 @@ func TestDeploy_RemoveImageFail(t *testing.T) {
 	}
 
 	deployer := NewDeployer(fake)
+	deployer.getVersion = func(name string) (string, error) {
+		return "v1", nil
+	}
 
 	err := deployer.Deploy(context.Background(), "hello", bytes.NewReader([]byte("test")), io.Discard)
 

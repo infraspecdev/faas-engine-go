@@ -15,11 +15,15 @@ import (
 
 type Deployer struct {
 	imageClient sdk.ImageClient
+	getVersion  func(name string) (string, error)
 }
 
 func NewDeployer(img sdk.ImageClient) *Deployer {
 	return &Deployer{
 		imageClient: img,
+		getVersion: func(name string) (string, error) {
+			return store.GetNextVersion(sqlite.DB, name)
+		},
 	}
 }
 
@@ -38,7 +42,7 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
-	version, err := store.GetNextVersion(sqlite.DB, name)
+	version, err := d.getVersion(name)
 	if err != nil {
 		return err
 	}

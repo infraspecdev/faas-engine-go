@@ -20,6 +20,12 @@ const (
 	ContainerIdleTimeout time.Duration = 10 * time.Second
 )
 
+// delete function related constants
+const (
+	RegistryDeleteTimeout = 200 * time.Second
+	RegistryDeleteRetries = 3
+)
+
 // registry related constants
 const (
 	RegistryURL   = "localhost:5000"
