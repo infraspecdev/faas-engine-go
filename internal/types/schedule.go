@@ -1,8 +1,8 @@
 package types
 
 type Schedule struct {
-	ID           string
-	FunctionName string
-	CronExpr     string
-	Payload      []byte
+	ID           string `json:"id"`
+	FunctionName string `json:"function"`
+	CronExpr     string `json:"cron"`
+	Payload      []byte `json:"payload"`
 }

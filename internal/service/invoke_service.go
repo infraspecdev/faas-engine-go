@@ -15,7 +15,7 @@ import (
 type FunctionInvoker struct {
 	containerClient sdk.ContainerClient
 	imageClient     sdk.ImageClient
-	invokeFunc      func(ctx context.Context, hostPort string, payload []byte) (map[string]any, error)
+	invokeFunc      func(ctx context.Context, hostPort string, payload []byte) (map[string]interface{}, error)
 }
 
 func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvoker {
