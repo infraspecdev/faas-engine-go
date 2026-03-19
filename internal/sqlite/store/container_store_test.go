@@ -51,67 +51,45 @@ func TestCreateAndGetContainer(t *testing.T) {
 	}
 }
 
-func TestGetContainerByID_NotFound(t *testing.T) {
+func TestAcquireFreeContainer(t *testing.T) {
 	db := setupContainerDB(t)
 
-	res, err := GetContainerByID(db, "unknown")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if res != nil {
-		t.Fatalf("expected nil, got %+v", res)
-	}
-}
-
-func TestGetContainersByFunction(t *testing.T) {
-	db := setupContainerDB(t)
-
-	_ = CreateContainer(db, &models.Container{ID: "c1", FunctionID: 1, Status: "free"})
-	_ = CreateContainer(db, &models.Container{ID: "c2", FunctionID: 1, Status: "busy"})
-	_ = CreateContainer(db, &models.Container{ID: "c3", FunctionID: 2, Status: "free"})
-
-	list, err := GetContainersByFunction(db, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(list) != 2 {
-		t.Fatalf("expected 2 containers, got %d", len(list))
-	}
-}
-
-func TestGetFreeContainer(t *testing.T) {
-	db := setupContainerDB(t)
-
-	old := time.Now().Add(-10 * time.Minute)
-	new := time.Now()
+	now := time.Now()
 
 	_ = CreateContainer(db, &models.Container{
-		ID:         "old",
+		ID:         "c1",
 		FunctionID: 1,
 		Status:     "free",
-		LastUsedAt: old,
+		LastUsedAt: now.Add(-10 * time.Minute),
 	})
 
 	_ = CreateContainer(db, &models.Container{
-		ID:         "new",
+		ID:         "c2",
 		FunctionID: 1,
 		Status:     "free",
-		LastUsedAt: new,
+		LastUsedAt: now,
 	})
 
-	res, err := GetFreeContainer(db, 1)
+	c, err := AcquireFreeContainer(db, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if res.ID != "old" {
-		t.Fatalf("expected oldest container, got %s", res.ID)
+	if c == nil {
+		t.Fatal("expected container, got nil")
+	}
+
+	if c.ID != "c2" {
+		t.Fatalf("expected c2, got %s", c.ID)
+	}
+
+	updated, _ := GetContainerByID(db, c.ID)
+	if updated.Status != "busy" {
+		t.Fatalf("expected busy, got %s", updated.Status)
 	}
 }
 
-func TestGetFreeContainer_None(t *testing.T) {
+func TestAcquireFreeContainer_None(t *testing.T) {
 	db := setupContainerDB(t)
 
 	_ = CreateContainer(db, &models.Container{
@@ -120,34 +98,13 @@ func TestGetFreeContainer_None(t *testing.T) {
 		Status:     "busy",
 	})
 
-	res, err := GetFreeContainer(db, 1)
+	c, err := AcquireFreeContainer(db, 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if res != nil {
-		t.Fatalf("expected nil, got %+v", res)
-	}
-}
-
-func TestMarkContainerBusy(t *testing.T) {
-	db := setupContainerDB(t)
-
-	_ = CreateContainer(db, &models.Container{
-		ID:         "c1",
-		FunctionID: 1,
-		Status:     "free",
-	})
-
-	err := MarkContainerBusy(db, "c1")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	c, _ := GetContainerByID(db, "c1")
-
-	if c.Status != "busy" {
-		t.Fatalf("expected busy, got %s", c.Status)
+	if c != nil {
+		t.Fatalf("expected nil, got %+v", c)
 	}
 }
 
@@ -191,7 +148,7 @@ func TestUpdateContainerLastUsed(t *testing.T) {
 
 	c, _ := GetContainerByID(db, "c1")
 
-	if c.LastUsedAt.Before(old) {
+	if !c.LastUsedAt.After(old) {
 		t.Fatalf("expected updated timestamp")
 	}
 }

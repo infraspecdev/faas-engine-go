@@ -265,3 +265,22 @@ func DeleteFunction(db *sql.DB, name string) error {
 
 	return err
 }
+
+func GetFunctionByNameAndVersion(db *sql.DB, name, version string) (*models.Function, error) {
+
+	query := `
+	SELECT ` + functionColumns + `
+	FROM functions
+	WHERE name = ? AND version = ?
+	LIMIT 1
+	`
+
+	row := db.QueryRow(query, name, version)
+
+	fn, err := scanFunctionRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return fn, err
+}

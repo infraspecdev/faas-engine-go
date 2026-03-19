@@ -52,6 +52,10 @@ func scanInvocationRow(row *sql.Row) (*models.Invocation, error) {
 func scanInvocationFromRows(rows *sql.Rows) (*models.Invocation, error) {
 	var inv models.Invocation
 
+	var logs sql.NullString
+	var response sql.NullString
+	var finishedAt sql.NullTime
+
 	err := rows.Scan(
 		&inv.ID,
 		&inv.FunctionID,
@@ -61,14 +65,27 @@ func scanInvocationFromRows(rows *sql.Rows) (*models.Invocation, error) {
 		&inv.ExitCode,
 		&inv.DurationMs,
 		&inv.RequestPayload,
-		&inv.ResponsePayload,
-		&inv.Logs,
+		&response,
+		&logs,
 		&inv.StartedAt,
-		&inv.FinishedAt,
+		&finishedAt,
 	)
-
 	if err != nil {
 		return nil, err
+	}
+
+	if logs.Valid {
+		inv.Logs = logs.String
+	} else {
+		inv.Logs = ""
+	}
+
+	if response.Valid {
+		inv.ResponsePayload = []byte(response.String)
+	}
+
+	if finishedAt.Valid {
+		inv.FinishedAt = finishedAt.Time
 	}
 
 	return &inv, nil
@@ -141,7 +158,6 @@ func CompleteInvocation(
 ) error {
 
 	duration := int(time.Since(startedAt).Milliseconds())
-
 	query := `
 	UPDATE invocations
 	SET status=?,
@@ -237,6 +253,39 @@ func ListInvocationsByStatus(db *sql.DB, status string, limit int) ([]models.Inv
 			return nil, err
 		}
 
+		result = append(result, *inv)
+	}
+
+	return result, nil
+}
+
+func GetInvocationLogsByFunction(db *sql.DB, functionID int, limit int) ([]models.Invocation, error) {
+
+	query := `
+	SELECT ` + invocationColumns + `
+	FROM (
+		SELECT ` + invocationColumns + `
+		FROM invocations
+		WHERE function_id = ?
+		ORDER BY started_at DESC
+		LIMIT ?
+	)
+	ORDER BY started_at ASC
+	`
+
+	rows, err := db.Query(query, functionID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var result []models.Invocation
+
+	for rows.Next() {
+		inv, err := scanInvocationFromRows(rows)
+		if err != nil {
+			return nil, err
+		}
 		result = append(result, *inv)
 	}
 

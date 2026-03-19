@@ -54,6 +54,7 @@ func scanContainerFromRows(rows *sql.Rows) (*models.Container, error) {
 	return &c, nil
 }
 
+// ✅ CREATE CONTAINER
 func CreateContainer(db *sql.DB, c *models.Container) error {
 
 	query := `
@@ -62,8 +63,9 @@ func CreateContainer(db *sql.DB, c *models.Container) error {
 		function_id,
 		status,
 		host_port,
-		last_used
-	) VALUES (?, ?, ?, ?, ?)
+		last_used,
+		created_at
+	) VALUES (?, ?, ?, ?, ?, ?)
 	`
 
 	_, err := db.Exec(
@@ -73,6 +75,7 @@ func CreateContainer(db *sql.DB, c *models.Container) error {
 		c.Status,
 		c.HostPort,
 		c.LastUsedAt,
+		time.Now(),
 	)
 
 	return err
@@ -105,29 +108,30 @@ func GetContainersByFunction(db *sql.DB, functionID int) ([]models.Container, er
 	var containers []models.Container
 
 	for rows.Next() {
-
 		c, err := scanContainerFromRows(rows)
 		if err != nil {
 			return nil, err
 		}
-
 		containers = append(containers, *c)
 	}
 
 	return containers, nil
 }
 
-func GetFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
+func AcquireFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
 
 	query := `
-	SELECT ` + containerColumns + `
-	FROM containers
-	WHERE function_id=? AND status='free'
-	ORDER BY last_used DESC
-	LIMIT 1
-	`
+	UPDATE containers
+	SET status='busy', last_used=?
+	WHERE id = (
+		SELECT id FROM containers
+		WHERE function_id=? AND status='free'
+		ORDER BY last_used DESC
+		LIMIT 1
+	)
+	RETURNING ` + containerColumns
 
-	row := db.QueryRow(query, functionID)
+	row := db.QueryRow(query, time.Now(), functionID)
 
 	c, err := scanContainerRow(row)
 	if err == sql.ErrNoRows {
@@ -137,43 +141,31 @@ func GetFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
 	return c, err
 }
 
-func MarkContainerBusy(db *sql.DB, id string) error {
-
-	query := `
-	UPDATE containers
-	SET status='busy'
-	WHERE id=?
-	`
-
-	_, err := db.Exec(query, id)
-	return err
-}
-
 func MarkContainerFree(db *sql.DB, id string) error {
 
-	query := `
-	UPDATE containers
-	SET status='free', last_used=CURRENT_TIMESTAMP
-	WHERE id=?
-	`
+	_, err := db.Exec(`
+		UPDATE containers
+		SET status='free', last_used=?
+		WHERE id=?
+	`, time.Now(), id)
 
-	_, err := db.Exec(query, id)
 	return err
 }
 
 func UpdateContainerLastUsed(db *sql.DB, id string) error {
 
-	query := `
-	UPDATE containers
-	SET last_used=CURRENT_TIMESTAMP
-	WHERE id=?
-	`
+	_, err := db.Exec(`
+		UPDATE containers
+		SET last_used=?
+		WHERE id=?
+	`, time.Now(), id)
 
-	_, err := db.Exec(query, id)
 	return err
 }
 
 func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
+
+	cutoff := time.Now().Add(-timeout)
 
 	rows, err := sqlite.DB.Query(`
 		UPDATE containers
@@ -183,7 +175,7 @@ func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
 			WHERE status='free' AND last_used < ?
 		)
 		RETURNING id
-	`, time.Now().Add(-timeout))
+	`, cutoff)
 
 	if err != nil {
 		return
@@ -201,11 +193,10 @@ func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
 
 func RemoveContainer(db *sql.DB, id string) error {
 
-	query := `
-	DELETE FROM containers
-	WHERE id=?
-	`
+	_, err := db.Exec(`
+		DELETE FROM containers
+		WHERE id=?
+	`, id)
 
-	_, err := db.Exec(query, id)
 	return err
 }

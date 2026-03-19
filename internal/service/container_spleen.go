@@ -35,28 +35,16 @@ func ContainerSpleen(containerClient sdk.ContainerClient) {
 					)
 
 					if err := containerClient.StopContainer(ctx, containerID); err != nil {
-						slog.Error(
-							"container_stop_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+						slog.Error("container_stop_failed", "container_id", containerID, "error", err)
 					}
 
 					if err := containerClient.DeleteContainer(ctx, containerID); err != nil {
-						slog.Error(
-							"container_delete_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+						slog.Error("container_delete_failed", "container_id", containerID, "error", err)
 						return
 					}
 
 					if err := store.RemoveContainer(sqlite.DB, containerID); err != nil {
-						slog.Error(
-							"db_remove_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+						slog.Error("db_remove_failed", "container_id", containerID, "error", err)
 					}
 
 					slog.Info(

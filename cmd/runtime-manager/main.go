@@ -56,16 +56,21 @@ func main() {
 	r := mux.NewRouter()
 
 	realDeployer := service.NewDeployer(docker)
-	realStore := api.NewFunctionStore()
+	deployStore := api.NewFunctionStore()
 
-	invokeInvoker := service.NewFunctionInvoker(docker, docker)
+	InvokeStore := service.NewStore()
+
+	invokeInvoker := service.NewFunctionInvoker(docker, docker, InvokeStore)
+
+	logService := service.NewLogService()
 
 	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
-	r.HandleFunc("/functions", api.DeployHandler(realDeployer, realStore)).Methods("POST")
+	r.HandleFunc("/functions", api.DeployHandler(realDeployer, deployStore)).Methods("POST")
 	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
+	r.HandleFunc("/functions/{functionName}/log", api.LogHandler(logService)).Methods("GET")
 
 	// Create server instance
 	srv := &http.Server{
