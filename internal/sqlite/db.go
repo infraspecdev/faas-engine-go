@@ -2,6 +2,10 @@ package sqlite
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
@@ -9,20 +13,36 @@ import (
 var DB *sql.DB
 
 func InitDB() error {
+	dbURL := os.Getenv("DB_URL")
+
+	if dbURL == "" {
+		dbURL = "internal/sqlite/faas-engine-go.db"
+	}
+
+	if strings.HasPrefix(dbURL, "/") {
+		dir := filepath.Dir(dbURL)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return fmt.Errorf("failed to create db dir: %w", err)
+		}
+	}
+
 	var err error
-
-	dbPath := "/var/lib/faas/faas-engine-go.db"
-
-	if err := os.MkdirAll("/var/lib/faas", 0755); err != nil {
-		return err
-	}
-
-	DB, err = sql.Open("sqlite", dbPath)
+	DB, err = sql.Open("sqlite", dbURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to open db: %w", err)
 	}
 
-	return DB.Ping()
+	if _, err := DB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		return fmt.Errorf("failed to enable WAL: %w", err)
+	}
+
+	if err := DB.Ping(); err != nil {
+		return fmt.Errorf("failed to ping db: %w", err)
+	}
+
+	fmt.Println("Using DB:", dbURL)
+
+	return nil
 }
 
 func InitTables() error {
