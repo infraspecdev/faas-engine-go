@@ -11,7 +11,13 @@ var DB *sql.DB
 func InitDB() error {
 	var err error
 
-	DB, err = sql.Open("sqlite", "internal/sqlite/faas-engine-go.db")
+	dbPath := "/var/lib/faas/faas-engine-go.db"
+
+	if err := os.MkdirAll("/var/lib/faas", 0755); err != nil {
+		return err
+	}
+
+	DB, err = sql.Open("sqlite", dbPath)
 	if err != nil {
 		return err
 	}
