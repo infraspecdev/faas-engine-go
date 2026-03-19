@@ -15,7 +15,7 @@ type Invocation struct {
 	DurationMs      int
 	RequestPayload  json.RawMessage
 	ResponsePayload json.RawMessage
-	LogsPath        string
+	Logs            string
 	StartedAt       time.Time
 	FinishedAt      time.Time
 }

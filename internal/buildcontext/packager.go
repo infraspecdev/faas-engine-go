@@ -9,16 +9,81 @@ import (
 	"mime/multipart"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 )
 
-func CreateTarStream(dirPath string) (io.Reader, error) {
+func ValidateFunction(runtime string, dirPath string) error {
+	switch runtime {
+
+	case "node":
+		return validateNode(dirPath)
+
+	case "python":
+		return validatePython(dirPath)
+
+	case "go":
+		return validateGo(dirPath)
+
+	default:
+		return fmt.Errorf("unsupported runtime %q (supported: node, python, go)\n", runtime)
+	}
+}
+
+func validateNode(dir string) error {
+	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if filepath.Ext(path) == ".js" {
+			cmd := exec.Command("node", "--check", path)
+
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("syntax error in %s:\n%s", filepath.Base(path), string(out))
+			}
+		}
+
+		return nil
+	})
+}
+
+func validatePython(dir string) error {
+	cmd := exec.Command("python", "-m", "compileall", dir)
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("python syntax error:\n%s", string(out))
+	}
+
+	return nil
+}
+
+func validateGo(dir string) error {
+	cmd := exec.Command("go", "build", "./...")
+	cmd.Dir = dir
+
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("go build error:\n%s", string(out))
+	}
+
+	return nil
+}
+
+func CreateTarStream(dirPath string, runtime string) (io.Reader, error) {
 	info, err := os.Stat(dirPath)
 	if err != nil {
 		return nil, err
 	}
 	if !info.IsDir() {
 		return nil, fmt.Errorf("path is not a directory")
+	}
+
+	err = ValidateFunction(runtime, dirPath)
+	if err != nil {
+		return nil, err
 	}
 
 	// Check if Dockerfile already exists
@@ -97,12 +162,35 @@ func CreateTarStream(dirPath string) (io.Reader, error) {
 		if !dockerfileExists {
 			// slog.Info("No Dockerfile found, injecting default Dockerfile into build context")
 
-			baseImage := config.ImageRef(config.RuntimesRepo, "node", "v1")
+			var dockerfile string
 
-			dockerfile := fmt.Sprintf(
-				"FROM %s\nCOPY . /function\n",
-				baseImage,
-			)
+			switch runtime {
+
+			case "node":
+				baseImage := config.ImageRef(config.RuntimesRepo, "node", "v1")
+				dockerfile = fmt.Sprintf(
+					"FROM %s\nCOPY . /function\n",
+					baseImage,
+				)
+
+			case "python":
+				baseImage := config.ImageRef(config.RuntimesRepo, "python", "v1")
+				dockerfile = fmt.Sprintf(
+					"FROM %s\nCOPY . /function\n",
+					baseImage,
+				)
+
+			case "go":
+				baseImage := config.ImageRef(config.RuntimesRepo, "go", "v1")
+				dockerfile = fmt.Sprintf(
+					"FROM %s\nCOPY . /function\n",
+					baseImage,
+				)
+
+			default:
+				pw.CloseWithError(fmt.Errorf("unsupported runtime: %s\nUse node, python or go", runtime))
+				return
+			}
 
 			// slog.Info("Using registry", "value", config.Registry())
 

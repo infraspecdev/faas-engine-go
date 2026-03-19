@@ -243,3 +243,54 @@ func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[str
 
 	return result, nil
 }
+
+func (d *DockerClient) LogContainer(ctx context.Context, containerID string) (string, error) {
+
+	reader, err := d.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: false,
+		Follow:     false,
+		Tail:       "100",
+	})
+	if err != nil {
+		return "", fmt.Errorf("failed to get logs: %w", err)
+	}
+	defer reader.Close()
+
+	var buf bytes.Buffer
+
+	_, err = io.Copy(&buf, reader)
+	if err != nil {
+		return "", fmt.Errorf("failed to read logs: %w", err)
+	}
+
+	clean := cleanDockerLogs(buf.Bytes())
+	return clean, nil
+}
+
+func cleanDockerLogs(raw []byte) string {
+	var result []byte
+
+	for i := 0; i < len(raw); {
+		if len(raw[i:]) < 8 {
+			break
+		}
+
+		length := int(raw[i+4])<<24 |
+			int(raw[i+5])<<16 |
+			int(raw[i+6])<<8 |
+			int(raw[i+7])
+
+		i += 8
+
+		if i+length > len(raw) {
+			break
+		}
+
+		result = append(result, raw[i:i+length]...)
+		i += length
+	}
+
+	return string(result)
+}

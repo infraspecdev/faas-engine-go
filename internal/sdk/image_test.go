@@ -106,7 +106,7 @@ func TestBuildImage_Success(t *testing.T) {
 	t.Parallel()
 
 	// data, err := os.ReadFile("test_samples/function.tar")
-	tarstream, err := buildcontext.CreateTarStream("../../samples/hello")
+	tarstream, err := buildcontext.CreateTarStream("../../samples/hello", "node")
 	if err != nil {
 		t.Fatalf("unexpected error - failed to create Tar stream: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestBuildImage_Success(t *testing.T) {
 func TestBuildImage_InvalidDirectory(t *testing.T) {
 	t.Parallel()
 
-	tarstream, err := buildcontext.CreateTarStream("../test_samples/invalid")
+	tarstream, err := buildcontext.CreateTarStream("../test_samples/invalid", "node")
 	if err == nil {
 		t.Fatal("expected error creating tar stream for invalid directory, got nil")
 	}
@@ -147,7 +147,7 @@ func TestBuildImage_duplicateImageName(t *testing.T) {
 		}
 	}()
 
-	tarstream, err := buildcontext.CreateTarStream("../../samples/hello")
+	tarstream, err := buildcontext.CreateTarStream("../../samples/hello", "node")
 	if err != nil {
 		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}

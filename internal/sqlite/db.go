@@ -59,7 +59,7 @@ func InitTables() error {
 			duration_ms INTEGER,
 			request_payload TEXT,	
 			response_payload TEXT,
-			logs_path TEXT,
+			logs TEXT,
 			started_at DATETIME,
 			finished_at DATETIME
 		);`,

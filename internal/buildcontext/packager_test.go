@@ -31,7 +31,7 @@ func TestPackageFunction_Success(t *testing.T) {
 
 	tempDir := createTempFunctionDir(t)
 
-	reader, err := CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir, "node")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -69,7 +69,7 @@ func TestPackageFunction_Success(t *testing.T) {
 }
 
 func TestPackageFunction_InvalidPath(t *testing.T) {
-	_, err := CreateTarStream("./invalid/path")
+	_, err := CreateTarStream("./invalid/path", "node")
 
 	if err == nil {
 		t.Fatal("expected error for invalid path")
@@ -85,7 +85,7 @@ func TestCreateTarStream_IncludesDockerfile_WhenMissing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir, "node")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestCreateTarStream_DoesNotOverrideExistingDockerfile(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reader, err := CreateTarStream(tempDir)
+	reader, err := CreateTarStream(tempDir, "node")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -62,8 +62,21 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 	inv *models.Invocation,
 ) (any, bool, error) {
 
-	container, _ := store.GetFreeContainer(sqlite.DB, fn.ID)
+	container, err := store.GetFreeContainer(sqlite.DB, fn.ID)
+	if err != nil {
+		return nil, false, err
+	}
 	if container == nil {
+		return nil, false, nil
+	}
+
+	inspect, err := f.containerClient.InspectContainer(ctx, container.ID)
+	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
+		slog.Warn("dead_container_detected", "id", container.ID)
+
+		_ = f.containerClient.DeleteContainer(ctx, container.ID)
+		_ = store.RemoveContainer(sqlite.DB, container.ID)
+
 		return nil, false, nil
 	}
 
@@ -77,7 +90,7 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 
 	res, err := f.invokeFunc(ctx, container.HostPort, payload)
 
-	f.completeInvocation(inv, res, err)
+	f.completeInvocation(inv, container.ID, res, err)
 
 	return res, true, err
 }
@@ -89,9 +102,7 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 	inv *models.Invocation,
 ) (any, error) {
 
-	version := fn.Version
-
-	image := config.ImageRef(config.FunctionsRepo, fn.Name, version)
+	image := config.ImageRef(config.FunctionsRepo, fn.Name, fn.Version)
 
 	slog.Info("container_lifecycle", "stage", "pulling", "function", fn.Name)
 
@@ -104,37 +115,54 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 		return nil, err
 	}
 
+	inspect, err := f.containerClient.InspectContainer(ctx, containerID)
+	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
+		slog.Error("container_exited_early", "id", containerID)
+
+		_ = f.containerClient.DeleteContainer(ctx, containerID)
+		return nil, fmt.Errorf("container exited early")
+	}
+
 	logger := slog.With("container_id", containerID, "function", fn.Name)
 	logger.Info("container_lifecycle", "stage", "created")
 
 	hostPort, err := f.waitForPort(ctx, containerID)
 	if err != nil {
+		_ = f.containerClient.DeleteContainer(ctx, containerID)
 		return nil, err
 	}
 
 	if err := f.waitForHealthy(ctx, containerID); err != nil {
+		_ = f.containerClient.DeleteContainer(ctx, containerID)
 		return nil, err
 	}
 
 	logger.Info("container_lifecycle", "stage", "healthy")
 
-	f.persistContainer(fn.ID, containerID, hostPort)
-
 	store.MarkInvocationRunning(sqlite.DB, inv.ID, containerID)
-
-	defer store.MarkContainerFree(sqlite.DB, containerID)
 
 	res, err := f.invokeFunc(ctx, hostPort, payload)
 
 	logger.Info("container_lifecycle", "stage", "invoking")
 
-	f.completeInvocation(inv, res, err)
+	if err == nil {
+		f.persistContainer(fn.ID, containerID, hostPort)
+	}
+
+	if err != nil {
+		_ = f.containerClient.DeleteContainer(ctx, containerID)
+	}
+
+	defer store.MarkContainerFree(sqlite.DB, containerID)
+
+	f.completeInvocation(inv, containerID, res, err)
 
 	return res, err
 }
 
 func (f *FunctionInvoker) completeInvocation(
 	inv *models.Invocation,
+	containerID string,
 	res map[string]any,
 	err error,
 ) {
@@ -155,13 +183,31 @@ func (f *FunctionInvoker) completeInvocation(
 		exitCode = 0
 	}
 
+	logs := ""
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	if containerID != "" {
+		l, logErr := f.containerClient.LogContainer(ctx, containerID)
+		if logErr != nil {
+			slog.Warn("log_fetch_failed", "container_id", containerID, "error", logErr)
+		} else {
+			logs = l
+
+			if len(logs) > 5000 {
+				logs = logs[:5000] + "...(truncated)"
+			}
+		}
+	}
+
 	store.CompleteInvocation(
 		sqlite.DB,
 		inv.ID,
 		status,
 		exitCode,
 		responsePayload,
-		"",
+		logs,
 		inv.StartedAt,
 	)
 }
@@ -218,11 +264,16 @@ func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string
 
 		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
 
-		if err == nil &&
-			inspect.Container.State != nil &&
-			inspect.Container.State.Health != nil &&
-			inspect.Container.State.Health.Status == "healthy" {
-			return nil
+		if err == nil && inspect.Container.State != nil {
+
+			if !inspect.Container.State.Running {
+				return fmt.Errorf("container exited before becoming healthy")
+			}
+
+			if inspect.Container.State.Health != nil &&
+				inspect.Container.State.Health.Status == "healthy" {
+				return nil
+			}
 		}
 
 		time.Sleep(300 * time.Millisecond)

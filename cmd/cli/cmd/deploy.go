@@ -29,9 +29,10 @@ to quickly create a Cobra application.`,
 		}
 		//create a tar stream of the function directory
 		fmt.Print("[1/3] Packaging function code...")
-		tarstream, err := buildcontext.CreateTarStream(abspath)
+		tarstream, err := buildcontext.CreateTarStream(abspath, runtimeName)
 		if err != nil {
-			return fmt.Errorf("failed to create tar stream: %w", err)
+			color.Red(" Failed. \n\n%s\n", err.Error())
+			return nil
 		}
 
 		if _, err := color.New(color.FgGreen).Println(" Done."); err != nil {
@@ -58,10 +59,15 @@ func init() {
 	deployCmd.Flags().StringVar(&filePath, "file", "", "Path to the function code directory")
 	deployCmd.Flags().StringVar(&functionName, "function-name", "", "Name of the function to deploy")
 
+	deployCmd.Flags().StringVar(&runtimeName, "runtime", "", "Name of the runtime to use")
+
 	if err := deployCmd.MarkFlagRequired("file"); err != nil {
 		log.Fatalf("failed to mark flag as required: %v", err)
 	}
 	if err := deployCmd.MarkFlagRequired("function-name"); err != nil {
+		log.Fatalf("failed to mark flag as required: %v", err)
+	}
+	if err := deployCmd.MarkFlagRequired("runtime"); err != nil {
 		log.Fatalf("failed to mark flag as required: %v", err)
 	}
 }

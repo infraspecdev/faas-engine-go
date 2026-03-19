@@ -36,7 +36,7 @@ func newInvocation(status string) *models.Invocation {
 		DurationMs:      0,
 		RequestPayload:  json.RawMessage(`{}`),
 		ResponsePayload: json.RawMessage(`{}`),
-		LogsPath:        "",
+		Logs:            "",
 		StartedAt:       time.Now(),
 		FinishedAt:      time.Now(),
 	}

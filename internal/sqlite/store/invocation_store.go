@@ -19,7 +19,7 @@ exit_code,
 duration_ms,
 request_payload,
 response_payload,
-logs_path,
+logs,
 started_at,
 finished_at
 `
@@ -37,7 +37,7 @@ func scanInvocationRow(row *sql.Row) (*models.Invocation, error) {
 		&inv.DurationMs,
 		&inv.RequestPayload,
 		&inv.ResponsePayload,
-		&inv.LogsPath,
+		&inv.Logs,
 		&inv.StartedAt,
 		&inv.FinishedAt,
 	)
@@ -62,7 +62,7 @@ func scanInvocationFromRows(rows *sql.Rows) (*models.Invocation, error) {
 		&inv.DurationMs,
 		&inv.RequestPayload,
 		&inv.ResponsePayload,
-		&inv.LogsPath,
+		&inv.Logs,
 		&inv.StartedAt,
 		&inv.FinishedAt,
 	)
@@ -91,7 +91,7 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 		duration_ms,
 		request_payload,
 		response_payload,
-		logs_path,
+		logs,
 		started_at,
 		finished_at
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -108,7 +108,7 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 		inv.DurationMs,
 		inv.RequestPayload,
 		inv.ResponsePayload,
-		inv.LogsPath,
+		inv.Logs,
 		inv.StartedAt,
 		inv.FinishedAt,
 	)
@@ -136,7 +136,7 @@ func CompleteInvocation(
 	status string,
 	exitCode int,
 	response json.RawMessage,
-	logsPath string,
+	logs string,
 	startedAt time.Time,
 ) error {
 
@@ -148,7 +148,7 @@ func CompleteInvocation(
 	    exit_code=?,
 	    duration_ms=?,
 	    response_payload=?,
-	    logs_path=?,
+	    logs=?,
 	    finished_at=?
 	WHERE id=?
 	`
@@ -159,7 +159,7 @@ func CompleteInvocation(
 		exitCode,
 		duration,
 		response,
-		logsPath,
+		logs,
 		time.Now(),
 		id,
 	)

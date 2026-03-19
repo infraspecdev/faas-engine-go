@@ -15,4 +15,6 @@ type ContainerClient interface {
 	WaitContainer(ctx context.Context, containerID string) (int64, error)
 
 	InspectContainer(ctx context.Context, containerID string) (client.ContainerInspectResult, error)
+
+	LogContainer(ctx context.Context, containerID string) (string, error)
 }
