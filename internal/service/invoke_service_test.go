@@ -111,7 +111,7 @@ func TestInvoke_Success(t *testing.T) {
 		return map[string]any{"result": "ok"}, nil
 	}
 
-	result, err := invoker.Invoke(context.Background(), "hello", []byte("{}"))
+	result, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -144,7 +144,7 @@ func TestInvoke_PullImageFail(t *testing.T) {
 
 	invoker := NewFunctionInvoker(con, img)
 
-	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"))
+	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -165,7 +165,7 @@ func TestInvoke_CreateContainerFail(t *testing.T) {
 
 	invoker := NewFunctionInvoker(con, img)
 
-	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"))
+	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -190,7 +190,7 @@ func TestInvoke_StartContainerFail(t *testing.T) {
 
 	invoker := NewFunctionInvoker(con, img)
 
-	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"))
+	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
 		t.Fatal("expected error but got nil")
@@ -212,7 +212,7 @@ func TestInvoke_UnhealthyContainer(t *testing.T) {
 
 	invoker := NewFunctionInvoker(con, img)
 
-	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"))
+	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
 		t.Fatal("expected container unhealthy error")

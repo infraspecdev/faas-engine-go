@@ -1,44 +1,14 @@
 package store
 
 import (
-	"database/sql"
-	"faas-engine-go/internal/sqlite"
-	"faas-engine-go/internal/sqlite/models"
 	"testing"
-	"time"
-
-	_ "modernc.org/sqlite"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	db, err := sql.Open("sqlite", ":memory:")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sqlite.DB = db
-
-	if err := sqlite.InitTables(); err != nil {
-		t.Fatal(err)
-	}
-
-	return db
-}
-
+// ---------- CREATE + GET ----------
 func TestCreateAndGetFunction(t *testing.T) {
 	db := setupTestDB(t)
 
-	fn := &models.Function{
-		Name:      "calc",
-		Version:   "v1",
-		Status:    "active",
-		CreatedAt: time.Now(),
-	}
-
-	err := CreateFunction(db, fn)
-	if err != nil {
-		t.Fatal(err)
-	}
+	createTestFunction(db, "calc", "v1")
 
 	res, err := GetFunction(db, "calc")
 	if err != nil {
@@ -50,6 +20,7 @@ func TestCreateAndGetFunction(t *testing.T) {
 	}
 }
 
+// ---------- NOT FOUND ----------
 func TestGetFunction_NotFound(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -63,16 +34,11 @@ func TestGetFunction_NotFound(t *testing.T) {
 	}
 }
 
+// ---------- ACTIVE FUNCTION ----------
 func TestGetActiveFunction(t *testing.T) {
 	db := setupTestDB(t)
 
-	fn := &models.Function{
-		Name:    "calc",
-		Version: "v1",
-		Status:  "active",
-	}
-
-	_ = CreateFunction(db, fn)
+	createTestFunction(db, "calc", "v1")
 
 	res, err := GetActiveFunction(db, "calc")
 	if err != nil {
@@ -84,11 +50,12 @@ func TestGetActiveFunction(t *testing.T) {
 	}
 }
 
+// ---------- LATEST VERSION ----------
 func TestGetLatestVersion(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v1"})
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v2"})
+	createTestFunction(db, "calc", "v1")
+	createTestFunction(db, "calc", "v2")
 
 	version, err := GetLatestVersion(db, "calc")
 	if err != nil {
@@ -100,10 +67,11 @@ func TestGetLatestVersion(t *testing.T) {
 	}
 }
 
+// ---------- NEXT VERSION ----------
 func TestGetNextVersion(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v2"})
+	createTestFunction(db, "calc", "v2")
 
 	version, err := GetNextVersion(db, "calc")
 	if err != nil {
@@ -115,6 +83,7 @@ func TestGetNextVersion(t *testing.T) {
 	}
 }
 
+// ---------- FIRST VERSION ----------
 func TestGetNextVersion_First(t *testing.T) {
 	db := setupTestDB(t)
 
@@ -128,10 +97,11 @@ func TestGetNextVersion_First(t *testing.T) {
 	}
 }
 
+// ---------- INVALID VERSION ----------
 func TestGetNextVersion_InvalidFormat(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "bad"})
+	createTestFunction(db, "calc", "bad")
 
 	_, err := GetNextVersion(db, "calc")
 	if err == nil {
@@ -139,11 +109,12 @@ func TestGetNextVersion_InvalidFormat(t *testing.T) {
 	}
 }
 
+// ---------- LIST FUNCTIONS ----------
 func TestListFunctions(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v1"})
-	_ = CreateFunction(db, &models.Function{Name: "auth", Version: "v1"})
+	createTestFunction(db, "calc", "v1")
+	createTestFunction(db, "auth", "v1")
 
 	functions, err := ListFunctions(db)
 	if err != nil {
@@ -155,11 +126,12 @@ func TestListFunctions(t *testing.T) {
 	}
 }
 
+// ---------- LIST VERSIONS ----------
 func TestListFunctionVersions(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v1"})
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v2"})
+	createTestFunction(db, "calc", "v1")
+	createTestFunction(db, "calc", "v2")
 
 	functions, err := ListFunctionVersions(db, "calc")
 	if err != nil {
@@ -171,14 +143,11 @@ func TestListFunctionVersions(t *testing.T) {
 	}
 }
 
+// ---------- DEACTIVATE ----------
 func TestDeactivateFunctions(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{
-		Name:    "calc",
-		Version: "v1",
-		Status:  "active",
-	})
+	createTestFunction(db, "calc", "v1")
 
 	err := DeactivateFunctions(db, "calc")
 	if err != nil {
@@ -192,10 +161,11 @@ func TestDeactivateFunctions(t *testing.T) {
 	}
 }
 
+// ---------- DELETE ----------
 func TestDeleteFunction(t *testing.T) {
 	db := setupTestDB(t)
 
-	_ = CreateFunction(db, &models.Function{Name: "calc", Version: "v1"})
+	createTestFunction(db, "calc", "v1")
 
 	err := DeleteFunction(db, "calc")
 	if err != nil {

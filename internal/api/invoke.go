@@ -1,8 +1,8 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
+	"faas-engine-go/internal/core"
 	"io"
 	"net/http"
 	"strings"
@@ -10,14 +10,10 @@ import (
 	"github.com/gorilla/mux"
 )
 
-type Invoker interface {
-	Invoke(ctx context.Context, functionName string, payload []byte) (any, error)
-}
-
 // InvokeHandler handles HTTP requests for invoking a deployed function.
 // It expects a "functionName" path parameter and a request body.
 // Returns 400 if input is invalid and 500 if invocation fails.
-func InvokeHandler(invoker Invoker) http.HandlerFunc {
+func InvokeHandler(invoker core.Invoker) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
 		vars := mux.Vars(r)
@@ -33,7 +29,7 @@ func InvokeHandler(invoker Invoker) http.HandlerFunc {
 			return
 		}
 
-		result, err := invoker.Invoke(r.Context(), functionName, body)
+		result, err := invoker.Invoke(r.Context(), functionName, body, "http")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

@@ -16,7 +16,18 @@ func InitDB() error {
 		return err
 	}
 
-	return DB.Ping()
+	err = DB.Ping()
+	if err != nil {
+		return err
+	}
+
+	_, err = DB.Exec("PRAGMA foreign_keys = ON;")
+	if err != nil {
+		return err
+	}
+	DB.Exec("PRAGMA journal_mode = WAL;")
+	DB.Exec("PRAGMA busy_timeout = 5000;")
+	return nil
 }
 
 func InitTables() error {
@@ -64,6 +75,17 @@ func InitTables() error {
 			finished_at DATETIME
 		);`,
 
+		//  SCHEDULES
+		`CREATE TABLE IF NOT EXISTS schedules (
+			id TEXT PRIMARY KEY,
+			function_id INTEGER NOT NULL,
+			cron_expr TEXT NOT NULL,
+			payload TEXT, -- changed from BLOB → TEXT
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+			FOREIGN KEY(function_id) REFERENCES functions(id) ON DELETE CASCADE
+		);`,
+
 		//  INDEXES
 		`CREATE INDEX IF NOT EXISTS idx_functions_name 
 		ON functions(name);`,
@@ -91,6 +113,13 @@ func InitTables() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_invocations_status 
 		ON invocations(status);`,
+
+		// SCHEDULE INDEXES
+		`CREATE INDEX IF NOT EXISTS idx_schedules_function_id 
+		ON schedules(function_id);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_schedules_cron 
+		ON schedules(cron_expr);`,
 	}
 
 	for _, q := range queries {
@@ -98,6 +127,5 @@ func InitTables() error {
 			return err
 		}
 	}
-
 	return nil
 }

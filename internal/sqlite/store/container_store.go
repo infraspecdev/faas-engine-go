@@ -123,7 +123,7 @@ func GetFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
 	SELECT ` + containerColumns + `
 	FROM containers
 	WHERE function_id=? AND status='free'
-	ORDER BY last_used DESC
+	ORDER BY last_used ASC
 	LIMIT 1
 	`
 

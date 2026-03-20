@@ -29,7 +29,7 @@ func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvok
 	}
 }
 
-func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte) (any, error) {
+func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte, triggerType string) (any, error) {
 
 	fn, err := store.GetActiveFunction(sqlite.DB, functionName)
 	if err != nil || fn == nil {
@@ -38,7 +38,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 
 	inv := &models.Invocation{
 		FunctionID:     fn.ID,
-		TriggerType:    "http",
+		TriggerType:    triggerType,
 		Status:         "pending",
 		RequestPayload: payload,
 		StartedAt:      time.Now(),

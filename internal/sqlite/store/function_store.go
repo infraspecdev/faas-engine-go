@@ -265,3 +265,17 @@ func DeleteFunction(db *sql.DB, name string) error {
 
 	return err
 }
+
+func GetFunctionByID(db *sql.DB, id int) (*models.Function, error) {
+
+	query := "SELECT " + functionColumns + " FROM functions WHERE id=?"
+
+	row := db.QueryRow(query, id)
+
+	fn, err := scanFunctionRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return fn, err
+}

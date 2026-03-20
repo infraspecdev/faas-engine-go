@@ -16,7 +16,7 @@ type mockInvoker struct {
 	shouldFail bool
 }
 
-func (m *mockInvoker) Invoke(ctx context.Context, name string, payload []byte) (any, error) {
+func (m *mockInvoker) Invoke(ctx context.Context, name string, payload []byte, triggerType string) (any, error) {
 	if m.shouldFail {
 		return nil, errors.New("invoke failed")
 	}

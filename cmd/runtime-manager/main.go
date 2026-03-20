@@ -60,6 +60,15 @@ func main() {
 
 	invokeInvoker := service.NewFunctionInvoker(docker, docker)
 
+	scheduler := service.NewSchedulerService(invokeInvoker)
+
+	if err := scheduler.LoadSchedules(); err != nil {
+		slog.Error("failed to load schedules", "error", err)
+		os.Exit(1)
+	}
+
+	scheduler.Start()
+
 	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(realDeployer, realStore)).Methods("POST")
@@ -67,6 +76,10 @@ func main() {
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
 
+	r.HandleFunc("/schedules/{functionName}", api.CreateScheduleHandler(scheduler)).Methods("POST")
+	r.HandleFunc("/schedules", api.ListSchedulesHandler()).Methods("GET")
+	r.HandleFunc("/schedules/{functionName}", api.ListScheduleByFunctionNameHandler(scheduler)).Methods("GET")
+	r.HandleFunc("/schedules/{id}", api.DeleteScheduleHandler(scheduler)).Methods("DELETE")
 	// Create server instance
 	srv := &http.Server{
 		Addr:    ":" + port, // ":"  = 0.0.0.0
@@ -90,6 +103,7 @@ func main() {
 	<-quit
 	slog.Info("shutdown signal received")
 
+	scheduler.Stop()
 	// Create timeout context for graceful shutdown
 	ctx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
