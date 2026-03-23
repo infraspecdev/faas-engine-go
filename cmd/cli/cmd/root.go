@@ -53,7 +53,7 @@ func init() {
 	}
 	targetUrl := os.Getenv("PROXY_URL")
 	if targetUrl == "" {
-		targetUrl = "http://localhost"
+		targetUrl = "http://10.30.20.196"
 	}
 	targetPort := os.Getenv("PROXY_PORT")
 	if targetPort == "" {
