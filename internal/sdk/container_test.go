@@ -33,7 +33,7 @@ func createTestContainer(t *testing.T, ctx context.Context, docker *DockerClient
 		ctx,
 		name,
 		"alpine:latest",
-		[]string{"sh", "-c", "while true; do sleep 1; done"},
+		[]string{"sh", "-c", "echo hello"},
 	)
 	if err != nil {
 		t.Fatalf("create failed: %v", err)
@@ -271,5 +271,160 @@ func TestInvokeContainer_Fail(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected error from container")
+	}
+}
+
+func TestLogContainer_Success(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	id, err := docker.CreateContainer(
+		ctx,
+		"test-log-success",
+		"alpine:latest",
+		[]string{"sh", "-c", "echo hello"},
+	)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = docker.DeleteContainer(context.Background(), id)
+	})
+
+	err = docker.StartContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+
+	_, err = docker.WaitContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+
+	logs, err := docker.LogContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if logs == "" {
+		t.Fatalf("expected logs but got empty")
+	}
+
+	if !strings.Contains(logs, "hello") {
+		t.Fatalf("expected logs to contain 'hello', got: %q", logs)
+	}
+}
+
+func TestLogContainer_InvalidID(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	_, err := docker.LogContainer(ctx, "invalid-container-id")
+
+	if err == nil {
+		t.Fatal("expected error for invalid container id")
+	}
+}
+
+func TestLogContainer_EmptyLogs(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	id, err := docker.CreateContainer(
+		ctx,
+		"test-empty",
+		"alpine:latest",
+		[]string{"sh", "-c", "true"},
+	)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = docker.DeleteContainer(context.Background(), id)
+	})
+
+	_ = docker.StartContainer(ctx, id)
+	_, _ = docker.WaitContainer(ctx, id)
+
+	logs, err := docker.LogContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if logs != "" {
+		t.Fatalf("expected empty logs but got: %q", logs)
+	}
+}
+
+func TestLogContainer_DeletedContainer(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	id := createTestContainer(t, ctx, docker, "test-deleted")
+
+	_ = docker.DeleteContainer(ctx, id)
+
+	_, err := docker.LogContainer(ctx, id)
+
+	if err == nil {
+		t.Fatal("expected error after container deletion")
+	}
+}
+
+func TestStreamContainerLogs_Success(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	id, err := docker.CreateContainer(
+		ctx,
+		"test-stream-success",
+		"alpine:latest",
+		[]string{"sh", "-c", "while true; do echo stream-log; sleep 1; done"},
+	)
+	if err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	t.Cleanup(func() {
+		_ = docker.StopContainer(context.Background(), id)
+		_ = docker.DeleteContainer(context.Background(), id)
+	})
+
+	err = docker.StartContainer(ctx, id)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+
+	reader, err := docker.StreamContainerLogs(ctx, id)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	defer reader.Close()
+
+	buf := make([]byte, 1024)
+
+	n, err := reader.Read(buf)
+	if err != nil && err != io.EOF {
+		t.Fatalf("failed to read logs: %v", err)
+	}
+
+	output := string(buf[:n])
+	t.Logf("STREAM OUTPUT: %q", output)
+
+	if output == "" {
+		t.Fatal("expected logs but got empty")
+	}
+}
+
+func TestStreamContainerLogs_Fail(t *testing.T) {
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
+	_, err := docker.StreamContainerLogs(ctx, "invalid-container-id")
+
+	if err == nil {
+		t.Fatal("expected error for invalid container")
 	}
 }

@@ -92,10 +92,6 @@ func (s *realStore) CreateContainer(c *models.Container) error {
 	return sqlstore.CreateContainer(s.db, c)
 }
 
-//
-// 🔥 FUNCTION INVOKER
-//
-
 type FunctionInvoker struct {
 	containerClient sdk.ContainerClient
 	imageClient     sdk.ImageClient
@@ -162,6 +158,13 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 		slog.Error("mark invocation running failed", "error", err)
 	}
 
+	slog.Info(
+		"container_lifecycle",
+		"container_id", container.ID,
+		"function", fn.Name,
+		"stage", "reusing",
+	)
+
 	res, err := f.invokeFunc(ctx, container.HostPort, payload)
 	if err != nil {
 		if delErr := f.containerClient.DeleteContainer(ctx, container.ID); delErr != nil {
@@ -201,6 +204,9 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 		return nil, err
 	}
 
+	logger := slog.With("container_id", containerID, "function", fn.Name)
+	logger.Info("container_lifecycle", "stage", "created")
+
 	hostPort, err := f.waitForPort(ctx, containerID)
 	if err != nil {
 		_ = f.containerClient.DeleteContainer(ctx, containerID)
@@ -210,6 +216,19 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 	if err := f.waitForHealthy(ctx, containerID); err != nil {
 		_ = f.containerClient.DeleteContainer(ctx, containerID)
 		return nil, err
+	}
+
+	logger.Info("container_lifecycle", "stage", "healthy")
+
+	if err := f.store.CreateContainer(&models.Container{
+		ID:         containerID,
+		FunctionID: fn.ID,
+		Status:     "busy",
+		HostPort:   hostPort,
+		LastUsedAt: time.Now(),
+		CreatedAt:  time.Now(),
+	}); err != nil {
+		slog.Warn("failed to persist container", "error", err)
 	}
 
 	if err := f.store.MarkInvocationRunning(inv.ID, containerID); err != nil {
@@ -225,18 +244,14 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 		return nil, err
 	}
 
-	if err := f.store.CreateContainer(&models.Container{
-		ID:         containerID,
-		FunctionID: fn.ID,
-		Status:     "free",
-		HostPort:   hostPort,
-		LastUsedAt: time.Now(),
-		CreatedAt:  time.Now(),
-	}); err != nil {
-		slog.Warn("failed to persist container", "error", err)
+	logger.Info("container_lifecycle", "stage", "invoking")
+
+	if err := f.store.MarkContainerFree(containerID); err != nil {
+		slog.Error("mark container free failed", "error", err)
 	}
 
 	f.completeInvocation(inv, containerID, res, nil)
+
 	return res, nil
 }
 

@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,13 +24,14 @@ type LogEntry struct {
 var (
 	version string
 	limit   int
+	follow  bool
 )
 
 var logsCmd = &cobra.Command{
 	Use:   "logs <function-name>",
 	Short: "fetch logs for a function",
-	Long:  `Fetch logs for the active version or a specific version of a function.`,
 	Args:  cobra.ExactArgs(1),
+
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		functionName := strings.TrimSpace(args[0])
@@ -37,7 +39,53 @@ var logsCmd = &cobra.Command{
 			return fmt.Errorf("function name is required")
 		}
 
-		endpoint := fmt.Sprintf("%s/functions/%s/log",
+		if follow {
+			color.Cyan("Streaming logs (Ctrl+C to stop)\n")
+
+			endpoint := fmt.Sprintf("%s/functions/%s/logs/stream",
+				serverAddr,
+				url.PathEscape(functionName),
+			)
+
+			resp, err := http.Get(endpoint)
+			if err != nil {
+				return fmt.Errorf("failed to connect to stream: %w", err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				color.Yellow("Function not found")
+				return nil
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("server error (%d): %s",
+					resp.StatusCode,
+					strings.TrimSpace(string(body)),
+				)
+			}
+
+			reader := bufio.NewScanner(resp.Body)
+
+			for reader.Scan() {
+				line := strings.TrimSpace(reader.Text())
+				if line == "" {
+					continue
+				}
+
+				line = strings.TrimPrefix(line, "data: ")
+				fmt.Println(line)
+			}
+
+			if err := reader.Err(); err != nil {
+				return fmt.Errorf("stream error: %w", err)
+			}
+
+			return nil
+		}
+
+		endpoint := fmt.Sprintf("%s/functions/%s/logs",
 			serverAddr,
 			url.PathEscape(functionName),
 		)
@@ -63,6 +111,11 @@ var logsCmd = &cobra.Command{
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response: %w", err)
+		}
+
+		if resp.StatusCode == http.StatusNotFound {
+			color.Yellow("Function not found")
+			return nil
 		}
 
 		if resp.StatusCode != http.StatusOK {
@@ -121,4 +174,5 @@ func init() {
 
 	logsCmd.Flags().StringVar(&version, "version", "", "Function version (optional)")
 	logsCmd.Flags().IntVar(&limit, "limit", 20, "Number of logs to fetch")
+	logsCmd.Flags().BoolVar(&follow, "follow", false, "Stream logs in real-time")
 }

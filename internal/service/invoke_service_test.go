@@ -3,6 +3,8 @@ package service
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 	"time"
 
@@ -69,6 +71,10 @@ func (f *fakeStore) CreateContainer(c *models.Container) error {
 	return nil
 }
 
+func (f *fakeStore) StreamContainerLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
+	return nil, nil
+}
+
 type fakeContainerClient struct {
 	createErr error
 	startErr  error
@@ -102,6 +108,10 @@ func (f *fakeContainerClient) LogContainer(ctx context.Context, containerID stri
 
 func (f *fakeContainerClient) WaitContainer(ctx context.Context, containerID string) (int64, error) {
 	return 0, nil
+}
+
+func (f *fakeContainerClient) StreamContainerLogs(ctx context.Context, containerID string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
 }
 
 func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID string) (client.ContainerInspectResult, error) {

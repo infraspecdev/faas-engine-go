@@ -64,13 +64,21 @@ func main() {
 
 	logService := service.NewLogService()
 
+	logStreamService := service.NewLogStreamService(docker, sqlite.DB)
+
 	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
 	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(realDeployer, deployStore)).Methods("POST")
 	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
 	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
 	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
-	r.HandleFunc("/functions/{functionName}/log", api.LogHandler(logService)).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/logs", api.LogHandler(logService)).Methods("GET")
+	r.HandleFunc(
+		"/functions/{functionName}/logs/stream",
+		api.LogStreamHandler(logStreamService),
+	).Methods("GET")
+
+	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler).Methods("GET")
 
 	// Create server instance
 	srv := &http.Server{

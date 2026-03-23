@@ -68,6 +68,7 @@ func (d *DockerClient) CreateContainer(
 	options := client.ContainerCreateOptions{
 		Config: &container.Config{
 			Image: imageName,
+			Cmd:   command,
 			Tty:   false,
 			User:  config.ContainerUser,
 			ExposedPorts: network.PortSet{
@@ -252,6 +253,7 @@ func (d *DockerClient) LogContainer(ctx context.Context, containerID string) (st
 		Timestamps: false,
 		Follow:     false,
 		Tail:       "100",
+		Since:      "0",
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to get logs: %w", err)
@@ -293,4 +295,23 @@ func cleanDockerLogs(raw []byte) string {
 	}
 
 	return string(result)
+}
+
+func (d *DockerClient) StreamContainerLogs(
+	ctx context.Context,
+	containerID string,
+) (io.ReadCloser, error) {
+
+	reader, err := d.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: false,
+		Follow:     true,
+		Tail:       "10",
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to stream logs: %w", err)
+	}
+
+	return reader, nil
 }

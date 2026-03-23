@@ -2,6 +2,7 @@ package sdk
 
 import (
 	"context"
+	"io"
 
 	"github.com/moby/moby/client"
 )
@@ -17,4 +18,5 @@ type ContainerClient interface {
 	InspectContainer(ctx context.Context, containerID string) (client.ContainerInspectResult, error)
 
 	LogContainer(ctx context.Context, containerID string) (string, error)
+	StreamContainerLogs(ctx context.Context, containerID string) (io.ReadCloser, error)
 }
