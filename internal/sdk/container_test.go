@@ -238,6 +238,9 @@ func TestInspectContainer_Fail(t *testing.T) {
 
 func TestInvokeContainer_Success(t *testing.T) {
 
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		if _, err := w.Write([]byte(`{"message":"hello"}`)); err != nil {
@@ -248,7 +251,7 @@ func TestInvokeContainer_Success(t *testing.T) {
 
 	port := strings.Split(server.URL, ":")[2]
 
-	resp, err := InvokeContainer(context.Background(), port, []byte(`{}`))
+	resp, err := docker.InvokeContainer(ctx, port, []byte(`{}`))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -260,6 +263,9 @@ func TestInvokeContainer_Success(t *testing.T) {
 
 func TestInvokeContainer_Fail(t *testing.T) {
 
+	ctx, docker, cancel := setupDocker(t)
+	defer cancel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "error", http.StatusInternalServerError)
 	}))
@@ -267,7 +273,7 @@ func TestInvokeContainer_Fail(t *testing.T) {
 
 	port := strings.Split(server.URL, ":")[2]
 
-	_, err := InvokeContainer(context.Background(), port, []byte(`{}`))
+	_, err := docker.InvokeContainer(ctx, port, []byte(`{}`))
 
 	if err == nil {
 		t.Fatal("expected error from container")
