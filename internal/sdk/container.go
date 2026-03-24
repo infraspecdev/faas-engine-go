@@ -3,7 +3,6 @@ package sdk
 import (
 	"bytes"
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"net/netip"
@@ -189,59 +188,20 @@ func StatsContainer(ctx context.Context, apiclient *client.Client, containerID s
 		return nil, err
 	}
 
-	defer stats.Body.Close()
+	defer func() {
+		if err := stats.Body.Close(); err != nil {
+			slog.Error(
+				"failed to close stats body",
+				"error", err,
+			)
+		}
+	}()
 	var buf bytes.Buffer
 	_, err = io.Copy(&buf, stats.Body)
 	if err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
-}
-
-func LogContainer(ctx context.Context, cli *client.Client, containerID string) (string, error) {
-	out, err := cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
-		ShowStdout: true,
-		ShowStderr: true,
-	})
-	if err != nil {
-		return "", err
-	}
-	defer out.Close()
-
-	var result bytes.Buffer
-	header := make([]byte, 8)
-
-	for {
-		// Read 8-byte header
-		_, err := io.ReadFull(out, header)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return "", err
-		}
-
-		// Docker frame format:
-		// Byte 0: stream type (1=stdout, 2=stderr)
-		// Bytes 1-3: unused
-		// Bytes 4-7: payload length (big endian uint32)
-
-		length := binary.BigEndian.Uint32(header[4:])
-		if length == 0 {
-			continue
-		}
-
-		// Read payload
-		payload := make([]byte, length)
-		_, err = io.ReadFull(out, payload)
-		if err != nil {
-			return "", err
-		}
-
-		result.Write(payload)
-	}
-
-	return result.String(), nil
 }
 
 func WaitContainer(ctx context.Context, cli *client.Client, containerID string) (int64, error) {
@@ -274,7 +234,13 @@ func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[str
 	if err != nil {
 		return nil, fmt.Errorf("failed to call container: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			slog.Error("failed to close response body",
+				"error", err,
+			)
+		}
+	}()
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {

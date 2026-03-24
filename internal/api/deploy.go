@@ -32,7 +32,11 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 			})
 			return
 		}
-		defer file.Close()
+		defer func() {
+			if err := file.Close(); err != nil {
+				fmt.Printf("failed to close file: %v", err)
+			}
+		}()
 
 		name := r.FormValue("name")
 		if name == "" {
@@ -60,5 +64,7 @@ func DeployHandler(deployer Deployer) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(payload)
+	if err := json.NewEncoder(w).Encode(payload); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 
@@ -38,6 +39,9 @@ func InvokeHandler(invoker Invoker) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(result)
+
+		if err := json.NewEncoder(w).Encode(result); err != nil {
+			slog.Error("failed to encode invoke response", "error", err)
+		}
 	}
 }

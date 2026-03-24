@@ -17,9 +17,15 @@ func PullImage(ctx context.Context, apiclient *client.Client, imageName string) 
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
-	defer imageRef.Close()
+	defer func() {
+		if err := imageRef.Close(); err != nil {
+			fmt.Printf("failed to close image reference: %v", err)
+		}
+	}()
 	slog.Info("Pulling image....")
-	io.Copy(io.Discard, imageRef)
+	if _, err := io.Copy(io.Discard, imageRef); err != nil {
+		return fmt.Errorf("failed to copy image data: %w", err)
+	}
 	return nil
 }
 
@@ -42,17 +48,16 @@ func BuildImage(ctx context.Context, apiclient *client.Client, imageName string,
 	if err != nil {
 		return fmt.Errorf("failed to build image: %w", err)
 	}
-	defer image.Body.Close()
+	defer func() {
+		if err := image.Body.Close(); err != nil {
+			fmt.Printf("failed to close image body: %v", err)
+		}
+	}()
 
 	if _, err := io.Copy(os.Stdout, image.Body); err != nil {
 		return fmt.Errorf("failed to read build output: %w", err)
 	}
-
-	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
-	if err != nil {
-		return err
-	}
-
+	//image pruning after build to clean up dangling images
 	_, err = apiclient.ImagePrune(ctx, client.ImagePruneOptions{})
 	if err != nil {
 		return err
@@ -114,8 +119,14 @@ func PushImage(ctx context.Context, apiclient *client.Client, target string) err
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}
-	defer imagePush.Close()
-	io.Copy(io.Discard, imagePush)
+	defer func() {
+		if err := imagePush.Close(); err != nil {
+			fmt.Printf("failed to close image push stream: %v", err)
+		}
+	}()
+	if _, err := io.Copy(io.Discard, imagePush); err != nil {
+		return fmt.Errorf("failed to read push output: %w", err)
+	}
 	return nil
 }
 

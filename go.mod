@@ -4,6 +4,7 @@ go 1.25.6
 
 require (
 	github.com/gorilla/mux v1.8.1
+	github.com/joho/godotenv v1.5.1
 	github.com/moby/moby/api v1.53.0
 	github.com/moby/moby/client v0.2.2
 	github.com/spf13/cobra v1.10.2

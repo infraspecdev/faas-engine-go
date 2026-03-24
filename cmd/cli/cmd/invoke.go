@@ -6,7 +6,9 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -18,14 +20,14 @@ var invokeCmd = &cobra.Command{
 	Use:   "invoke",
 	Short: "invoke a function in the runtime",
 	Long: `Invoke command allows you to execute a deployed function in the runtime manager.
-	Example usage:
-	lambda invoke --name my-function
-	`,
-	// Args: cobra.ExactArgs(1),
+Example usage:
+lambda invoke --name my-function
+`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if functionName == "" {
 			return fmt.Errorf("function name is required")
 		}
+
 		url := fmt.Sprintf("%s/functions/%s/invoke", serverAddr, functionName)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader(data))
@@ -43,7 +45,12 @@ var invokeCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		defer resp.Body.Close()
+
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				slog.Error("failed to close response body", "error", err)
+			}
+		}()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
@@ -61,18 +68,17 @@ var invokeCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(invokeCmd)
-	// Here you will define your flags and configuration settings.
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// invokeCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// invokeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	invokeCmd.Flags().StringVar(&functionName, "name", "", "Name of the function to invoke")
 	invokeCmd.Flags().StringVar(&data, "data", "", "Data to pass to the function as input")
 
-	invokeCmd.MarkFlagRequired("name")
-	invokeCmd.MarkFlagRequired("data")
+	if err := invokeCmd.MarkFlagRequired("name"); err != nil {
+		slog.Error("failed to mark flag as required", "flag", "name", "error", err)
+		os.Exit(1)
+	}
+
+	if err := invokeCmd.MarkFlagRequired("data"); err != nil {
+		slog.Error("failed to mark flag as required", "flag", "data", "error", err)
+		os.Exit(1)
+	}
 }
