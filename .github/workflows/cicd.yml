@@ -232,7 +232,7 @@ jobs:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/services/"
+          source: "./artifacts/*.service"
           target: "/tmp"
 
       - name: Deploy and restart service
