@@ -3,8 +3,7 @@ package service
 import (
 	"fmt"
 
-	"faas-engine-go/internal/sqlite"
-	"faas-engine-go/internal/sqlite/store"
+	"faas-engine-go/internal/sqlite/models"
 )
 
 type VersionInfo struct {
@@ -12,9 +11,21 @@ type VersionInfo struct {
 	Active  bool   `json:"active"`
 }
 
-func GetFunctionVersions(name string) ([]VersionInfo, error) {
+type FunctionStore interface {
+	ListFunctionVersions(name string) ([]models.Function, error)
+}
 
-	fns, err := store.ListFunctionVersions(sqlite.DB, name)
+type FunctionVersionService struct {
+	store FunctionStore
+}
+
+func NewFunctionVersionService(s FunctionStore) *FunctionVersionService {
+	return &FunctionVersionService{store: s}
+}
+
+func (s *FunctionVersionService) GetVersions(name string) ([]VersionInfo, error) {
+
+	fns, err := s.store.ListFunctionVersions(name)
 	if err != nil {
 		return nil, err
 	}
@@ -24,7 +35,6 @@ func GetFunctionVersions(name string) ([]VersionInfo, error) {
 	}
 
 	var result []VersionInfo
-
 	for _, fn := range fns {
 		result = append(result, VersionInfo{
 			Version: fn.Version,

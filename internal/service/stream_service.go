@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -13,18 +12,17 @@ import (
 
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite/models"
-	sqlstore "faas-engine-go/internal/sqlite/store"
 )
 
 type LogStreamService struct {
 	containerClient sdk.ContainerClient
-	db              *sql.DB
+	store           Store
 }
 
-func NewLogStreamService(c sdk.ContainerClient, db *sql.DB) *LogStreamService {
+func NewLogStreamService(c sdk.ContainerClient, s Store) *LogStreamService {
 	return &LogStreamService{
 		containerClient: c,
-		db:              db,
+		store:           s,
 	}
 }
 
@@ -46,7 +44,7 @@ func (s *LogStreamService) StreamFunctionLogs(
 			return nil
 
 		case <-ticker.C:
-			containers, err := sqlstore.GetContainersByFunction(s.db, functionID)
+			containers, err := s.store.GetContainersByFunction(functionID)
 			if err != nil {
 				out <- fmt.Sprintf("error: %v", err)
 				continue
@@ -142,9 +140,12 @@ func (s *LogStreamService) streamSingleContainer(
 
 		_, err := io.ReadFull(reader, header)
 		if err != nil {
-			if err != io.EOF {
-				slog.Error("header read error", "container", containerID, "error", err)
+
+			if err == io.EOF || strings.Contains(err.Error(), "context canceled") {
+				return
 			}
+
+			slog.Error("header read error", "container", containerID, "error", err)
 			return
 		}
 
@@ -170,7 +171,7 @@ func (s *LogStreamService) streamSingleContainer(
 }
 
 func (s *LogStreamService) GetFunctionID(name string) (int, error) {
-	fn, err := sqlstore.GetActiveFunction(s.db, name)
+	fn, err := s.store.GetActiveFunction(name)
 	if err != nil {
 		return 0, err
 	}
