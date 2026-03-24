@@ -182,10 +182,6 @@ func GetNextVersion(db *sql.DB, name string) (string, error) {
 	return fmt.Sprintf("v%d", v+1), nil
 }
 
-// -----------------------------
-// 🔹 UPDATE
-// -----------------------------
-
 func DeactivateFunctions(db *sql.DB, name string) error {
 
 	query := `
@@ -197,10 +193,6 @@ func DeactivateFunctions(db *sql.DB, name string) error {
 	_, err := db.Exec(query, name)
 	return err
 }
-
-// -----------------------------
-// 🔹 LIST
-// -----------------------------
 
 func ListFunctions(db *sql.DB) ([]models.Function, error) {
 
