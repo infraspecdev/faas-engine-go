@@ -9,59 +9,14 @@ import (
 	"testing"
 )
 
-type fakeImageClient struct {
-	buildCalled  bool
-	tagCalled    bool
-	pushCalled   bool
-	removeCalled bool
-
-	buildErr  error
-	tagErr    error
-	pushErr   error
-	removeErr error
-
-	lastTagSource string
-	lastTagTarget string
-	lastPushImage string
-
-	pullCalled bool
-	pullErr    error
-}
-
-func (f *fakeImageClient) PullImage(ctx context.Context, name string) error {
-	f.pullCalled = true
-	return f.pullErr
-}
-
-func (f *fakeImageClient) BuildImage(ctx context.Context, name string, r io.Reader, w io.Writer) error {
-	f.buildCalled = true
-	return f.buildErr
-}
-
-func (f *fakeImageClient) TagImage(ctx context.Context, source, target string) error {
-	f.tagCalled = true
-	f.lastTagSource = source
-	f.lastTagTarget = target
-	return f.tagErr
-}
-
-func (f *fakeImageClient) PushImage(ctx context.Context, name string) error {
-	f.pushCalled = true
-	f.lastPushImage = name
-	return f.pushErr
-}
-
-func (f *fakeImageClient) RemoveImage(ctx context.Context, name string) error {
-	f.removeCalled = true
-	return f.removeErr
-}
+// fakeImageClient is now provided by common_test_helpers.go
 
 func TestDeploy_Success(t *testing.T) {
 	t.Parallel()
 
 	fake := &fakeImageClient{}
 
-	deployer := NewDeployer(fake)
+	deployer := NewDeployService(fake)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -102,7 +57,7 @@ func TestDeploy_BuildImageFail(t *testing.T) {
 		buildErr: errors.New("build failed"),
 	}
 
-	deployer := NewDeployer(fake)
+	deployer := NewDeployService(fake)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -137,7 +92,7 @@ func TestDeploy_TagImageFail(t *testing.T) {
 		tagErr: errors.New("tag failed"),
 	}
 
-	deployer := NewDeployer(fake)
+	deployer := NewDeployService(fake)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -172,7 +127,7 @@ func TestDeploy_PushImageFail(t *testing.T) {
 		pushErr: errors.New("push failed"),
 	}
 
-	deployer := NewDeployer(fake)
+	deployer := NewDeployService(fake)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -207,7 +162,7 @@ func TestDeploy_RemoveImageFail(t *testing.T) {
 		removeErr: errors.New("remove failed"),
 	}
 
-	deployer := NewDeployer(fake)
+	deployer := NewDeployService(fake)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
