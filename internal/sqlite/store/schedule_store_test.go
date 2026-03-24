@@ -138,7 +138,6 @@ func TestDeleteSchedule_NotFound(t *testing.T) {
 func TestListSchedulesByFunctionName(t *testing.T) {
 	db := setupTestDB(t)
 
-	// 🔥 REQUIRED
 	createTestFunction(db, "test-func", "v1")
 
 	s := &models.Schedule{
