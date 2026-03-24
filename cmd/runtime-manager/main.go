@@ -54,31 +54,33 @@ func main() {
 
 	// Setup router
 	r := mux.NewRouter()
+	store := service.NewStore()
 
-	realDeployer := service.NewDeployer(docker)
-	deployStore := api.NewFunctionStore()
+	deployService := service.NewDeployService(docker)
+	functionStore := api.NewFunctionStore()
 
-	InvokeStore := service.NewStore()
-
-	invokeInvoker := service.NewFunctionInvoker(docker, docker, InvokeStore)
+	invokeService := service.NewInvokeService(docker, docker, store)
 
 	logService := service.NewLogService()
 
-	logStreamService := service.NewLogStreamService(docker, sqlite.DB)
+	functionVersionService := service.NewFunctionVersionService(store)
 
-	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
-	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
-	r.HandleFunc("/functions", api.DeployHandler(realDeployer, deployStore)).Methods("POST")
-	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
-	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
-	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
+	logStreamService := service.NewLogStreamService(docker, store)
+
+	registryClient := &service.HTTPRegistryClient{}
+	deleteService := service.NewFunctionDeleteService(store, registryClient)
+
+	listService := service.NewListService(store)
+
+	r.HandleFunc("/functions", api.ListFunctionsHandler(listService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/logs", api.LogHandler(logService)).Methods("GET")
-	r.HandleFunc(
-		"/functions/{functionName}/logs/stream",
-		api.LogStreamHandler(logStreamService),
-	).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/logs/stream", api.LogStreamHandler(logStreamService)).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler(functionVersionService)).Methods("GET")
 
-	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler).Methods("GET")
+	r.HandleFunc("/functions", api.DeployHandler(deployService, functionStore)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeService)).Methods("POST")
+
+	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler(deleteService)).Methods("DELETE")
 
 	// Create server instance
 	srv := &http.Server{

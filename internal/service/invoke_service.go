@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -10,101 +9,22 @@ import (
 
 	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
-	sqlstore "faas-engine-go/internal/sqlite/store"
 
 	"github.com/moby/moby/api/types/network"
 )
-
-type Store interface {
-	GetActiveFunction(name string) (*models.Function, error)
-	CreateInvocation(inv *models.Invocation) error
-	MarkInvocationRunning(invID string, containerID string) error
-	CompleteInvocation(
-		invID string,
-		status string,
-		exitCode int,
-		responsePayload []byte,
-		logs string,
-		startedAt time.Time,
-	) error
-	AcquireFreeContainer(functionID int) (*models.Container, error)
-	MarkContainerFree(containerID string) error
-	RemoveContainer(containerID string) error
-	CreateContainer(c *models.Container) error
-}
-
-type realStore struct {
-	db *sql.DB
-}
-
-var _ Store = (*realStore)(nil)
-
-func NewStore() Store {
-	return &realStore{db: sqlite.DB}
-}
-
-func (s *realStore) GetActiveFunction(name string) (*models.Function, error) {
-	return sqlstore.GetActiveFunction(s.db, name)
-}
-
-func (s *realStore) CreateInvocation(inv *models.Invocation) error {
-	return sqlstore.CreateInvocation(s.db, inv)
-}
-
-func (s *realStore) MarkInvocationRunning(invID string, containerID string) error {
-	return sqlstore.MarkInvocationRunning(s.db, invID, containerID)
-}
-
-func (s *realStore) CompleteInvocation(
-	invID string,
-	status string,
-	exitCode int,
-	responsePayload []byte,
-	logs string,
-	startedAt time.Time,
-) error {
-	return sqlstore.CompleteInvocation(
-		s.db,
-		invID,
-		status,
-		exitCode,
-		responsePayload,
-		logs,
-		startedAt,
-	)
-}
-
-func (s *realStore) AcquireFreeContainer(functionID int) (*models.Container, error) {
-	return sqlstore.AcquireFreeContainer(s.db, functionID)
-}
-
-func (s *realStore) MarkContainerFree(containerID string) error {
-	return sqlstore.MarkContainerFree(s.db, containerID)
-}
-
-func (s *realStore) RemoveContainer(containerID string) error {
-	return sqlstore.RemoveContainer(s.db, containerID)
-}
-
-func (s *realStore) CreateContainer(c *models.Container) error {
-	return sqlstore.CreateContainer(s.db, c)
-}
 
 type FunctionInvoker struct {
 	containerClient sdk.ContainerClient
 	imageClient     sdk.ImageClient
 	store           Store
-	invokeFunc      func(ctx context.Context, hostPort string, payload []byte) (map[string]any, error)
 }
 
-func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient, s Store) *FunctionInvoker {
+func NewInvokeService(c sdk.ContainerClient, i sdk.ImageClient, s Store) *FunctionInvoker {
 	return &FunctionInvoker{
 		containerClient: c,
 		imageClient:     i,
 		store:           s,
-		invokeFunc:      sdk.InvokeContainer,
 	}
 }
 
@@ -165,7 +85,7 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 		"stage", "reusing",
 	)
 
-	res, err := f.invokeFunc(ctx, container.HostPort, payload)
+	res, err := f.containerClient.InvokeContainer(ctx, container.HostPort, payload)
 	if err != nil {
 		if delErr := f.containerClient.DeleteContainer(ctx, container.ID); delErr != nil {
 			slog.Warn("failed to delete container", "error", delErr)
@@ -235,7 +155,7 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 		return nil, err
 	}
 
-	res, err := f.invokeFunc(ctx, hostPort, payload)
+	res, err := f.containerClient.InvokeContainer(ctx, hostPort, payload)
 	if err != nil {
 		_ = f.containerClient.DeleteContainer(ctx, containerID)
 		_ = f.store.RemoveContainer(containerID)

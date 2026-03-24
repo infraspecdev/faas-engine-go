@@ -200,7 +200,7 @@ func (d *DockerClient) InspectContainer(
 // It forwards the provided JSON payload and expects a JSON response.
 // Returns a decoded JSON map or an error if the request fails or the container
 // returns a non-200 status.
-func InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
+func (d *DockerClient) InvokeContainer(ctx context.Context, hostPort string, body []byte) (map[string]any, error) {
 
 	url := fmt.Sprintf("http://localhost:%s/", hostPort)
 

@@ -18,7 +18,7 @@ type Deployer struct {
 	getVersion  func(name string) (string, error)
 }
 
-func NewDeployer(img sdk.ImageClient) *Deployer {
+func NewDeployService(img sdk.ImageClient) *Deployer {
 	return &Deployer{
 		imageClient: img,
 		getVersion: func(name string) (string, error) {
