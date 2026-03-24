@@ -93,10 +93,10 @@ jobs:
       - name: Build application
         run: |
           mkdir -p ./bin
-          go build -o ./bin/runtime-manager ./cmd/runtime-manager/.
-          go build -o ./bin/proxy ./cmd/proxy/.
+          go build -o ./bin/runtime-manager ./cmd/runtime-manager
+          go build -o ./bin/proxy ./cmd/proxy
 
-      - name: Upload build artifact
+      - name: Upload runtime-manager artifact
         uses: actions/upload-artifact@v4
         with:
           name: runtime-manager-binary
@@ -216,7 +216,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
           target: "/tmp"
-          # strip_components: 1
+
       - name: Copy proxy binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -225,7 +225,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/proxy"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Copy service files to server
         uses: appleboy/scp-action@v0.1.7
@@ -235,7 +234,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/services/"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1
@@ -248,9 +246,6 @@ jobs:
 
             echo "=== Starting Deployment ==="
 
-            echo "=== DEBUG: /tmp/artifacts contents ==="
-            ls -l /tmp/artifacts
-
             echo "=== Stopping existing services ==="
             sudo systemctl stop faas-engine || true
             sudo systemctl stop faas-proxy || true
@@ -262,41 +257,9 @@ jobs:
 
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
-            echo "=== Backing up existing runtime binary ==="
-            if [ -f /opt/faas-engine/runtime-manager ]; then
-              sudo cp /opt/faas-engine/runtime-manager \
-                /backup/bin/runtime-manager.$TIMESTAMP
-              echo "Runtime binary backup created"
-            else
-              echo "No runtime binary to back up"
-            fi
-
-            echo "=== Backing up existing proxy binary ==="
-            if [ -f /opt/faas-engine/proxy ]; then
-              sudo cp /opt/faas-engine/proxy \
-                /backup/bin/proxy.$TIMESTAMP
-              echo "Proxy binary backup created"
-            else
-              echo "No proxy binary to back up"
-            fi
-
-            echo "=== Backing up runtime service file ==="
-            if [ -f /etc/systemd/system/faas-engine.service ]; then
-              sudo cp /etc/systemd/system/faas-engine.service \
-                /backup/services/faas-engine.service.$TIMESTAMP
-              echo "Runtime service backup created"
-            else
-              echo "No runtime service file to back up"
-            fi
-
-            echo "=== Backing up proxy service file ==="
-            if [ -f /etc/systemd/system/faas-proxy.service ]; then
-              sudo cp /etc/systemd/system/faas-proxy.service \
-                /backup/services/faas-proxy.service.$TIMESTAMP
-              echo "Proxy service backup created"
-            else
-              echo "No proxy service file to back up"
-            fi
+            echo "=== Backing up binaries ==="
+            [ -f /opt/faas-engine/runtime-manager ] && sudo cp /opt/faas-engine/runtime-manager /backup/bin/runtime-manager.$TIMESTAMP || true
+            [ -f /opt/faas-engine/proxy ] && sudo cp /opt/faas-engine/proxy /backup/bin/proxy.$TIMESTAMP || true
 
             echo "=== Cleaning old binaries ==="
             sudo rm -f /opt/faas-engine/runtime-manager
@@ -310,10 +273,14 @@ jobs:
             sudo mv /tmp/artifacts/proxy /opt/faas-engine/proxy
             sudo chmod +x /opt/faas-engine/proxy
 
-            echo "=== Deploying runtime service ==="
-            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
+            echo "=== Applying port binding capability ==="
+            sudo setcap 'cap_net_bind_service=+ep' /opt/faas-engine/proxy
 
-            echo "=== Deploying proxy service ==="
+            echo "=== Verifying capability ==="
+            getcap /opt/faas-engine/proxy
+
+            echo "=== Deploying service files ==="
+            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
             sudo mv /tmp/artifacts/faas-proxy.service /etc/systemd/system/faas-proxy.service
 
             echo "=== Reloading systemd ==="

@@ -17,15 +17,12 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-	// ❗ Disable default Director
 	proxy.Director = nil
 
-	// ✅ Timeout
 	proxy.Transport = &http.Transport{
 		ResponseHeaderTimeout: 30 * time.Second,
 	}
 
-	// ✅ Error handling
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		if strings.Contains(err.Error(), "timeout") {
 			http.Error(w, "Function timeout", http.StatusGatewayTimeout)
@@ -35,7 +32,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 		http.Error(w, "Runtime error", http.StatusInternalServerError)
 	}
 
-	// ✅ Rewrite
 	proxy.Rewrite = func(pr *httputil.ProxyRequest) {
 
 		req := pr.In
@@ -50,9 +46,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 			"method", req.Method,
 		)
 
-		// --------------------------------------------------
-		// ✅ CONTROL PLANE (/functions)
-		// --------------------------------------------------
 		if strings.HasPrefix(req.URL.Path, "/functions") {
 			out.URL.Path = req.URL.Path
 			out.URL.RawQuery = req.URL.RawQuery
@@ -64,9 +57,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 			return
 		}
 
-		// --------------------------------------------------
-		// ✅ DATA PLANE (invoke via host)
-		// --------------------------------------------------
 		fn := extractFunctionName(req.Host)
 
 		if fn == "" {
@@ -80,9 +70,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 
 		slog.Info("invoke request", "function", fn)
 
-		// --------------------------------------------------
-		// ✅ GET → POST (ONLY for invoke)
-		// --------------------------------------------------
 		if req.Method == http.MethodGet {
 
 			params := map[string]interface{}{}
@@ -111,7 +98,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 		}
 	}
 
-	// ✅ Handler
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		// Allow control plane
@@ -132,7 +118,6 @@ func ProxyHandler(targetURL *url.URL) http.Handler {
 	})
 }
 
-// ✅ safer header copy
 func copyHeaders(dst, src http.Header) {
 	for k, vv := range src {
 		for _, v := range vv {
@@ -141,7 +126,6 @@ func copyHeaders(dst, src http.Header) {
 	}
 }
 
-// ✅ Extract function name
 func extractFunctionName(host string) string {
 
 	if strings.Contains(host, ":") {
