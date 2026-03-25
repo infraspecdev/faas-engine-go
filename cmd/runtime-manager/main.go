@@ -72,11 +72,14 @@ func main() {
 
 	listService := service.NewListService(store)
 
+	rollbackService := service.NewRollbackService(store, docker)
+
 	r.HandleFunc("/functions", api.ListFunctionsHandler(listService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/logs", api.LogHandler(logService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/logs/stream", api.LogStreamHandler(logStreamService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler(functionVersionService)).Methods("GET")
-
+	r.HandleFunc("/functions/{functionName}/rollback", api.RollbackHandler(rollbackService)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/history", api.RollbackHistoryHandler(rollbackService)).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(deployService, functionStore)).Methods("POST")
 	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeService)).Methods("POST")
 

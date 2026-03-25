@@ -86,6 +86,14 @@ func (f *fakeStore) DeleteFunction(name string) error {
 	return nil
 }
 
+func (f *fakeStore) RollbackToVersion(functionName, targetVersion string) (string, error) {
+	return "v1", nil
+}
+
+func (f *fakeStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
+	return []models.VersionHistory{}, nil
+}
+
 type fakeContainerClient struct {
 	createErr error
 	startErr  error

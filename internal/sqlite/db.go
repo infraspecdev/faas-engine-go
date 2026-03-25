@@ -117,6 +117,22 @@ func InitTables() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_invocations_status 
 		ON invocations(status);`,
+
+		//  VERSION_HISTORY
+		`CREATE TABLE IF NOT EXISTS version_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			function_id INTEGER,
+			from_version TEXT,
+			to_version TEXT,
+			triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			FOREIGN KEY(function_id) REFERENCES functions(id)
+		);	`,
+
+		`CREATE INDEX IF NOT EXISTS idx_version_history_function_id
+		ON version_history(function_id);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_version_history_triggered_at
+		ON version_history(triggered_at DESC);`,
 	}
 
 	for _, q := range queries {

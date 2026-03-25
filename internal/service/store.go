@@ -28,6 +28,8 @@ type Store interface {
 	ListFunctionVersions(name string) ([]models.Function, error)
 	DeleteFunction(name string) error
 	ListFunctions() ([]models.Function, error)
+	RollbackToVersion(functionName, targetVersion string) (string, error)
+	GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error)
 }
 
 type realStore struct {
@@ -101,4 +103,12 @@ func (s *realStore) DeleteFunction(name string) error {
 
 func (s *realStore) ListFunctions() ([]models.Function, error) {
 	return sqlstore.ListFunctions(s.db)
+}
+
+func (s *realStore) RollbackToVersion(functionName, targetVersion string) (string, error) {
+	return sqlstore.RollbackToVersion(s.db, functionName, targetVersion)
+}
+
+func (s *realStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
+	return sqlstore.GetVersionHistory(s.db, functionName, limit)
 }

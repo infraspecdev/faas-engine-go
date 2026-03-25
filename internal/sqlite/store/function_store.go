@@ -276,3 +276,104 @@ func GetFunctionByNameAndVersion(db *sql.DB, name, version string) (*models.Func
 
 	return fn, err
 }
+
+// RollbackToVersion performs an atomic rollback to a specific version.
+// It deactivates the current active version and activates the target version,
+// then records the rollback event in version_history.
+func RollbackToVersion(db *sql.DB, functionName, targetVersion string) (string, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Get function ID and current active version
+	var functionID int
+	var currentVersion string
+	err = tx.QueryRow(
+		"SELECT id, version FROM functions WHERE name=? AND status='active'",
+		functionName,
+	).Scan(&functionID, &currentVersion)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no active version found for function")
+		}
+		return "", err
+	}
+
+	// Verify target version exists
+	var targetID int
+	err = tx.QueryRow(
+		"SELECT id FROM functions WHERE name=? AND version=?",
+		functionName, targetVersion,
+	).Scan(&targetID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("target version %s not found", targetVersion)
+		}
+		return "", err
+	}
+
+	// Deactivate current version
+	_, err = tx.Exec(
+		"UPDATE functions SET status='inactive' WHERE name=? AND status='active'",
+		functionName,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	// Activate target version
+	_, err = tx.Exec(
+		"UPDATE functions SET status='active' WHERE id=?",
+		targetID,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	// Record rollback in version_history
+	_, err = tx.Exec(
+		"INSERT INTO version_history (function_id, from_version, to_version) VALUES (?, ?, ?)",
+		functionID, currentVersion, targetVersion,
+	)
+	if err != nil {
+		return "", err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+
+	return currentVersion, nil
+}
+
+// GetVersionHistory retrieves rollback history for a function.
+func GetVersionHistory(db *sql.DB, functionName string, limit int) ([]models.VersionHistory, error) {
+	query := `
+	SELECT v.id, v.function_id, v.from_version, v.to_version, v.triggered_at
+	FROM version_history v
+	JOIN functions f ON v.function_id = f.id
+	WHERE f.name = ?
+	ORDER BY v.triggered_at DESC
+	LIMIT ?
+	`
+
+	rows, err := db.Query(query, functionName, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var history []models.VersionHistory
+	for rows.Next() {
+		var vh models.VersionHistory
+		err := rows.Scan(&vh.ID, &vh.FunctionID, &vh.FromVersion, &vh.ToVersion, &vh.TriggeredAt)
+		if err != nil {
+			return nil, err
+		}
+		history = append(history, vh)
+	}
+
+	return history, nil
+}
