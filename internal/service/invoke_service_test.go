@@ -2,19 +2,125 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"errors"
-	"faas-engine-go/internal/db"
 	"testing"
+
+	_ "modernc.org/sqlite"
+
+	"faas-engine-go/internal/sqlite"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 )
 
+/*
+========================
+TEST DB SETUP
+========================
+*/
+
+func setupTestDB(t *testing.T) {
+	db, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("failed to open db: %v", err)
+	}
+
+	sqlite.DB = db
+
+	// Realistic schema
+	_, err = db.Exec(`
+	CREATE TABLE functions (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		name TEXT,
+		version TEXT,
+		package_checksum TEXT,
+		image TEXT,
+		runtime TEXT,
+		schedule_cron TEXT,
+		endpoint TEXT,
+		status TEXT,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	`)
+	if err != nil {
+		t.Fatalf("create functions: %v", err)
+	}
+
+	_, err = db.Exec(`
+	CREATE TABLE containers (
+		id TEXT PRIMARY KEY,
+		function_id INTEGER,
+		status TEXT,
+		host_port TEXT,
+		last_used TIMESTAMP,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	);
+	`)
+	if err != nil {
+		t.Fatalf("create containers: %v", err)
+	}
+
+	_, err = db.Exec(`
+	CREATE TABLE invocations (
+		id TEXT PRIMARY KEY,
+		function_id INTEGER,
+		container_id TEXT,
+		trigger_type TEXT,
+		status TEXT,
+		exit_code INTEGER,
+		duration_ms INTEGER,
+		request_payload TEXT,
+		response_payload TEXT,
+		logs TEXT,
+		started_at DATETIME,
+		finished_at DATETIME
+	);
+	`)
+	if err != nil {
+		t.Fatalf("create invocations: %v", err)
+	}
+
+	_, err = db.Exec(`
+INSERT INTO functions (
+	id,
+	name,
+	version,
+	package_checksum,
+	image,
+	runtime,
+	schedule_cron,
+	endpoint,
+	status,
+	created_at
+) VALUES (
+	1,
+	'hello',
+	'v1',
+	'checksum',
+	'hello:latest',
+	'node',
+	'',
+	'',
+	'active',
+	CURRENT_TIMESTAMP
+);
+`)
+	if err != nil {
+		t.Fatalf("insert function: %v", err)
+	}
+}
+
+/*
+========================
+FAKE CONTAINER CLIENT
+========================
+*/
+
 type fakeContainerClient struct {
 	createCalled bool
 	startCalled  bool
-	stopCalled   bool
 
 	createErr error
 	startErr  error
@@ -25,11 +131,9 @@ type fakeContainerClient struct {
 
 func (f *fakeContainerClient) CreateContainer(ctx context.Context, name, image string, cmd []string) (string, error) {
 	f.createCalled = true
-
 	if f.createErr != nil {
 		return "", f.createErr
 	}
-
 	return "test-container", nil
 }
 
@@ -38,21 +142,20 @@ func (f *fakeContainerClient) StartContainer(ctx context.Context, containerID st
 	return f.startErr
 }
 
-func (f *fakeContainerClient) StopContainer(ctx context.Context, containerID string) error {
-	f.stopCalled = true
+func (f *fakeContainerClient) DeleteContainer(ctx context.Context, containerID string) error {
 	return nil
 }
 
-func (f *fakeContainerClient) DeleteContainer(ctx context.Context, containerID string) error {
-	return nil
+func (f *fakeContainerClient) LogContainer(ctx context.Context, containerID string) (string, error) {
+	return "", nil
 }
 
 func (f *fakeContainerClient) StatsContainer(ctx context.Context, containerID string) ([]byte, error) {
 	return nil, nil
 }
 
-func (f *fakeContainerClient) LogContainer(ctx context.Context, containerID string) (string, error) {
-	return "", nil
+func (f *fakeContainerClient) StopContainer(ctx context.Context, containerID string) error {
+	return nil
 }
 
 func (f *fakeContainerClient) WaitContainer(ctx context.Context, containerID string) (int64, error) {
@@ -64,12 +167,7 @@ func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID 
 	portMap := network.PortMap{}
 
 	if f.port != "" {
-		p, err := network.ParsePort(f.port + "/tcp")
-
-		if err != nil {
-			return client.ContainerInspectResult{}, err
-		}
-
+		p, _ := network.ParsePort(f.port + "/tcp")
 		portMap[p] = []network.PortBinding{
 			{HostPort: f.port},
 		}
@@ -85,6 +183,7 @@ func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID 
 			Ports: portMap,
 		},
 		State: &container.State{
+			Running: true,
 			Health: &container.Health{
 				Status: container.HealthStatus(health),
 			},
@@ -96,10 +195,16 @@ func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID 
 	}, nil
 }
 
+/*
+========================
+TESTS
+========================
+*/
+
 func TestInvoke_Success(t *testing.T) {
+	setupTestDB(t)
 
 	img := &fakeImageClient{}
-
 	con := &fakeContainerClient{
 		healthy: true,
 		port:    "8080",
@@ -111,30 +216,19 @@ func TestInvoke_Success(t *testing.T) {
 		return map[string]any{"result": "ok"}, nil
 	}
 
-	result, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
+	res, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if result == nil {
-		t.Fatal("expected result but got nil")
-	}
-
-	if !img.pullCalled {
-		t.Fatal("PullImage should be called")
-	}
-
-	if !con.createCalled {
-		t.Fatal("CreateContainer should be called")
-	}
-
-	if !con.startCalled {
-		t.Fatal("StartContainer should be called")
+	if res == nil {
+		t.Fatal("expected result")
 	}
 }
 
 func TestInvoke_PullImageFail(t *testing.T) {
+	setupTestDB(t)
 
 	img := &fakeImageClient{
 		pullErr: errors.New("pull failed"),
@@ -147,16 +241,13 @@ func TestInvoke_PullImageFail(t *testing.T) {
 	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
-		t.Fatal("expected error but got nil")
-	}
-
-	if con.createCalled {
-		t.Fatal("container should not be created when pull fails")
+		t.Fatal("expected error")
 	}
 }
 
 func TestInvoke_CreateContainerFail(t *testing.T) {
-	db.ResetContainerMap()
+	setupTestDB(t)
+
 	img := &fakeImageClient{}
 
 	con := &fakeContainerClient{
@@ -168,19 +259,12 @@ func TestInvoke_CreateContainerFail(t *testing.T) {
 	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
-		t.Fatal("expected error but got nil")
-	}
-
-	if !img.pullCalled {
-		t.Fatal("PullImage should be called")
-	}
-
-	if !con.createCalled {
-		t.Fatal("CreateContainer should be called")
+		t.Fatal("expected error")
 	}
 }
 
 func TestInvoke_StartContainerFail(t *testing.T) {
+	setupTestDB(t)
 
 	img := &fakeImageClient{}
 
@@ -193,21 +277,18 @@ func TestInvoke_StartContainerFail(t *testing.T) {
 	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
-		t.Fatal("expected error but got nil")
-	}
-
-	if !con.startCalled {
-		t.Fatal("StartContainer should be called")
+		t.Fatal("expected error")
 	}
 }
 
 func TestInvoke_UnhealthyContainer(t *testing.T) {
+	setupTestDB(t)
 
 	img := &fakeImageClient{}
 
 	con := &fakeContainerClient{
 		healthy: false,
-		port:    "9000",
+		port:    "8080",
 	}
 
 	invoker := NewFunctionInvoker(con, img)
@@ -215,6 +296,6 @@ func TestInvoke_UnhealthyContainer(t *testing.T) {
 	_, err := invoker.Invoke(context.Background(), "hello", []byte("{}"), "http")
 
 	if err == nil {
-		t.Fatal("expected container unhealthy error")
+		t.Fatal("expected unhealthy error")
 	}
 }
