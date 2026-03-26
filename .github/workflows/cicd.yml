@@ -186,10 +186,12 @@ jobs:
           script: |
             echo "Building runtime images..."
             cd /opt/faas-engine/runtimes
+            docker build -t localhost:5000/runtimes/go:v1 go-runtime
             docker build -t localhost:5000/runtimes/node:v1 node-runtime
             docker build -t localhost:5000/runtimes/python:v1 python-runtime
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
+            docker push localhost:5000/runtimes/go:v1
             echo "Runtime images built and pushed to local registry"
       - name: Copy binary to server
         uses: appleboy/scp-action@v0.1.7

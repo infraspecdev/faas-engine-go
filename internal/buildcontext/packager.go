@@ -182,10 +182,16 @@ func CreateTarStream(dirPath string, runtime string) (io.Reader, error) {
 
 			case "go":
 				baseImage := config.ImageRef(config.RuntimesRepo, "go", "v1")
-				dockerfile = fmt.Sprintf(
-					"FROM %s\nCOPY . /function\n",
-					baseImage,
-				)
+				dockerfile = fmt.Sprintf(`
+				FROM golang:1.22-alpine AS builder
+				WORKDIR /build
+				COPY . .
+				RUN go build -o handler handler.go
+
+				FROM %s
+				COPY --from=builder /build/handler /function/handler
+				RUN chmod +x /function/handler
+				`, baseImage)
 
 			default:
 				pw.CloseWithError(fmt.Errorf("unsupported runtime: %s\nUse node, python or go", runtime))
