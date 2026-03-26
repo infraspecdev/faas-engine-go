@@ -218,49 +218,87 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
+            set -euxo pipefail
+
             echo "=== Starting Deployment ==="
+
+            # Create user if needed
+            if ! id "faas-engine" &>/dev/null; then
+              echo "=== Creating faas-engine user ==="
+              sudo useradd --system --no-create-home --shell /usr/sbin/nologin faas-engine
+            else
+              echo "User faas-engine already exists"
+            fi
+
+            # Ensure docker access
+            sudo usermod -aG docker faas-engine
+
             echo "=== DEBUG: /tmp contents ==="
             ls -l /tmp
+
+            echo "=== Validating artifacts ==="
+            [ -f /tmp/artifacts/runtime-manager ] || { echo "Missing runtime-manager"; exit 1; }
+            [ -f /tmp/artifacts/faas-engine.service ] || { echo "Missing service file"; exit 1; }
+
             echo "=== Stopping existing service ==="
             sudo systemctl stop faas-engine || true
-            # Ensure required directories exist
-            sudo mkdir -p /opt/faas-engine
-            sudo mkdir -p /backup/bin
-            sudo mkdir -p /backup/services
+
+            # Directories
+            sudo mkdir -p /opt/faas-engine /backup/bin /backup/services
+
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            echo "=== Backing up existing binary if present ==="
+
+            echo "=== Backing up binary ==="
             if [ -f /opt/faas-engine/runtime-manager ]; then
               sudo cp /opt/faas-engine/runtime-manager \
                 /backup/bin/runtime-manager.$TIMESTAMP
-              echo "Binary backup created"
-            else
-              echo "No existing binary to back up"
             fi
-            echo "=== Backing up existing service file if present ==="
+
+            echo "=== Backing up service ==="
             if [ -f /etc/systemd/system/faas-engine.service ]; then
               sudo cp /etc/systemd/system/faas-engine.service \
                 /backup/services/faas-engine.service.$TIMESTAMP
-              echo "Service backup created"
-            else
-              echo "No existing service file to back up"
             fi
-            echo "=== Cleaning old runtime-manager completely ==="
-            sudo rm -rf /opt/faas-engine/runtime-manager
+
+            echo "=== Cleaning old binary ==="
+            sudo rm -f /opt/faas-engine/runtime-manager
+
             echo "=== Deploying new binary ==="
             sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
-            echo "=== Deploying new service file ==="
+
+            echo "=== Setting ownership ==="
+            sudo chown -R faas-engine:faas-engine /opt/faas-engine
+            sudo chmod -R 750 /opt/faas-engine
+
+            echo "=== Deploying service file ==="
             sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
+
             echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
+
             echo "=== Starting service ==="
             sudo systemctl restart faas-engine
+
             echo "=== Checking Service Status ==="
             if ! sudo systemctl is-active --quiet faas-engine; then
               echo "Service failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
+
+              echo "=== Attempting rollback ==="
+              LATEST_BACKUP=$(ls -t /backup/bin/runtime-manager.* 2>/dev/null | head -n1)
+
+              if [ -n "$LATEST_BACKUP" ]; then
+                sudo cp "$LATEST_BACKUP" /opt/faas-engine/runtime-manager
+                sudo chmod +x /opt/faas-engine/runtime-manager
+                sudo systemctl restart faas-engine
+                echo "Rollback attempted"
+              else
+                echo "No backup available"
+              fi
+
               exit 1
             fi
-            echo "Service deployed successfully"
+
+            echo "=== Service deployed successfully ==="
