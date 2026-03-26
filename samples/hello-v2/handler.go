@@ -8,7 +8,6 @@ import (
 )
 
 func main() {
-	// Read input from stdin
 	input, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		writeError("failed to read input")
@@ -23,23 +22,25 @@ func main() {
 		}
 	}
 
-	// Extract name
 	name, ok := event["name"].(string)
 	if !ok || name == "" {
 		name = "World"
 	}
 
-	// Create response
 	response := map[string]string{
 		"message": fmt.Sprintf("Hello, %s!", name),
 	}
 
-	// Write output to stdout
-	json.NewEncoder(os.Stdout).Encode(response)
+	if err := json.NewEncoder(os.Stdout).Encode(response); err != nil {
+		// Last resort: log to stderr (stdout is already compromised)
+		fmt.Fprintln(os.Stderr, "failed to write response:", err)
+	}
 }
 
 func writeError(msg string) {
-	json.NewEncoder(os.Stdout).Encode(map[string]string{
+	if err := json.NewEncoder(os.Stdout).Encode(map[string]string{
 		"error": msg,
-	})
+	}); err != nil {
+		fmt.Fprintln(os.Stderr, "failed to write error:", err)
+	}
 }
