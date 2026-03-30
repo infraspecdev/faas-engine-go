@@ -114,7 +114,7 @@ func TestCreateSchedule_Success(t *testing.T) {
 	scheduler := &mockScheduler{}
 
 	body := map[string]any{
-		"cron": "*/1 * * * *",
+		"cron": "0 * * * * *", // Every minute at second 0 (60-second interval, passes validation)
 	}
 	b, _ := json.Marshal(body)
 
@@ -180,7 +180,7 @@ func TestCreateSchedule_SchedulerFails(t *testing.T) {
 	scheduler := &mockScheduler{shouldFail: true}
 
 	body := map[string]any{
-		"cron": "*/1 * * * *",
+		"cron": "0 * * * * *", // Every minute at second 0 (60-second interval, passes validation)
 	}
 	b, _ := json.Marshal(body)
 
@@ -254,18 +254,32 @@ func TestListSchedules(t *testing.T) {
 	}
 }
 
-func TestListSchedulesByFunctionName_MissingName(t *testing.T) {
+func TestListSchedulesByFunctionName_WithFilter(t *testing.T) {
 	setupTestDB(t)
 
-	req := setupRequest("GET", "/schedules/fn", nil, map[string]string{
-		"functionName": "",
-	})
+	// Test with query parameter filter
+	req := setupRequest("GET", "/schedules?function=myFunc", nil, map[string]string{})
 
 	w := httptest.NewRecorder()
 
-	ListScheduleByFunctionNameHandler(nil)(w, req)
+	ListSchedulesHandler()(w, req)
 
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+}
+
+func TestListSchedulesByFunctionName_MissingFilter(t *testing.T) {
+	setupTestDB(t)
+
+	// Test without query parameter - returns all schedules
+	req := setupRequest("GET", "/schedules", nil, map[string]string{})
+
+	w := httptest.NewRecorder()
+
+	ListSchedulesHandler()(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
 	}
 }

@@ -4,7 +4,7 @@ import "time"
 
 type Container struct {
 	ID         string
-	FunctionID int
+	FunctionID string
 	Status     string
 	HostPort   string
 	StartedAt  time.Time

@@ -97,23 +97,25 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := db.Exec(
-		query,
-		inv.ID,
-		inv.FunctionID,
-		inv.ContainerID,
-		inv.TriggerType,
-		inv.Status,
-		inv.ExitCode,
-		inv.DurationMs,
-		inv.RequestPayload,
-		inv.ResponsePayload,
-		inv.Logs,
-		inv.StartedAt,
-		inv.FinishedAt,
-	)
-
-	return err
+	// Retry with exponential backoff for database lock scenarios
+	return retryWithBackoff(func() error {
+		_, err := db.Exec(
+			query,
+			inv.ID,
+			inv.FunctionID,
+			inv.ContainerID,
+			inv.TriggerType,
+			inv.Status,
+			inv.ExitCode,
+			inv.DurationMs,
+			inv.RequestPayload,
+			inv.ResponsePayload,
+			inv.Logs,
+			inv.StartedAt,
+			inv.FinishedAt,
+		)
+		return err
+	})
 }
 
 func MarkInvocationRunning(db *sql.DB, id string, containerID string) error {
@@ -181,7 +183,7 @@ func GetInvocationByID(db *sql.DB, id string) (*models.Invocation, error) {
 	return inv, err
 }
 
-func ListInvocationsByFunction(db *sql.DB, functionID int, limit int) ([]models.Invocation, error) {
+func ListInvocationsByFunction(db *sql.DB, functionID string, limit int) ([]models.Invocation, error) {
 
 	query := `
 	SELECT ` + invocationColumns + `

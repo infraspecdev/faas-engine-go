@@ -4,6 +4,9 @@ import (
 	"database/sql"
 	"faas-engine-go/internal/sqlite/models"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 )
 
 const functionColumns = `
@@ -66,9 +69,19 @@ func scanFunctionFromRows(rows *sql.Rows) (*models.Function, error) {
 }
 
 func CreateFunction(db *sql.DB, fn *models.Function) error {
+	// Generate UUID if not already set
+	if fn.ID == "" {
+		fn.ID = uuid.New().String()
+	}
+
+	// Set created_at if not already set
+	if fn.CreatedAt.IsZero() {
+		fn.CreatedAt = time.Now()
+	}
 
 	query := `
 	INSERT INTO functions (
+		id,
 		name,
 		version,
 		package_checksum,
@@ -76,11 +89,13 @@ func CreateFunction(db *sql.DB, fn *models.Function) error {
 		runtime,
 		schedule_cron,
 		endpoint,
-		status
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+		status,
+		created_at
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 
 	_, err := db.Exec(
 		query,
+		fn.ID,
 		fn.Name,
 		fn.Version,
 		fn.PackageChecksum,
@@ -89,6 +104,7 @@ func CreateFunction(db *sql.DB, fn *models.Function) error {
 		fn.ScheduleCron,
 		fn.Endpoint,
 		fn.Status,
+		fn.CreatedAt,
 	)
 
 	return err
@@ -147,7 +163,7 @@ func GetLatestVersion(db *sql.DB, name string) (string, error) {
 	SELECT version
 	FROM functions
 	WHERE name = ?
-	ORDER BY id DESC
+	ORDER BY created_at DESC
 	LIMIT 1
 	`
 
@@ -266,7 +282,7 @@ func DeleteFunction(db *sql.DB, name string) error {
 	return err
 }
 
-func GetFunctionByID(db *sql.DB, id int) (*models.Function, error) {
+func GetFunctionByID(db *sql.DB, id string) (*models.Function, error) {
 
 	query := "SELECT " + functionColumns + " FROM functions WHERE id=?"
 

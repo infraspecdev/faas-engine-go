@@ -22,27 +22,35 @@ func ContainerSpleen(containerClient sdk.ContainerClient) {
 				config.ContainerIdleTimeout,
 				func(containerID string) {
 
-					ctx, cancel := context.WithTimeout(
-						context.Background(),
-						config.CleanUpTimeout,
-					)
-					defer cancel()
-
 					slog.Info(
 						"container_lifecycle",
 						"container_id", containerID,
 						"stage", "spleen_cleanup",
 					)
 
-					if err := containerClient.StopContainer(ctx, containerID); err != nil {
+					// Create separate contexts for stop and delete with timeouts from config
+					// Both of these Docker operations need time when containers are still active
+					stopCtx, stopCancel := context.WithTimeout(
+						context.Background(),
+						config.ContainerCleanupStopTimeout,
+					)
+					if err := containerClient.StopContainer(stopCtx, containerID); err != nil {
 						slog.Error(
 							"container_stop_failed",
 							"container_id", containerID,
 							"error", err,
 						)
 					}
+					stopCancel()
 
-					if err := containerClient.DeleteContainer(ctx, containerID); err != nil {
+					// Delete in separate context with own timeout
+					deleteCtx, deleteCancel := context.WithTimeout(
+						context.Background(),
+						config.ContainerCleanupDeleteTimeout,
+					)
+					defer deleteCancel()
+
+					if err := containerClient.DeleteContainer(deleteCtx, containerID); err != nil {
 						slog.Error(
 							"container_delete_failed",
 							"container_id", containerID,

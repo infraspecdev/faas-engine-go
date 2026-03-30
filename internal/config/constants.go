@@ -18,12 +18,20 @@ const (
 	InvokeHTTPTimeout    time.Duration = 10 * time.Second
 	ContainerStopTimeout time.Duration = 10 * time.Second
 	ContainerIdleTimeout time.Duration = 10 * time.Second
+	// Container cleanup timeouts (for spleen/garbage collection)
+	ContainerCleanupStopTimeout   time.Duration = 30 * time.Second
+	ContainerCleanupDeleteTimeout time.Duration = 30 * time.Second
 )
 
 // delete function related constants
 const (
 	RegistryDeleteTimeout = 200 * time.Second
 	RegistryDeleteRetries = 3
+)
+
+// schedule related constants
+const (
+	ScheduleMinimumIntervalSeconds time.Duration = 60 * time.Second
 )
 
 // registry related constants

@@ -66,16 +66,18 @@ func CreateContainer(db *sql.DB, c *models.Container) error {
 	) VALUES (?, ?, ?, ?, ?)
 	`
 
-	_, err := db.Exec(
-		query,
-		c.ID,
-		c.FunctionID,
-		c.Status,
-		c.HostPort,
-		c.LastUsedAt,
-	)
-
-	return err
+	// Retry with exponential backoff for database lock scenarios
+	return retryWithBackoff(func() error {
+		_, err := db.Exec(
+			query,
+			c.ID,
+			c.FunctionID,
+			c.Status,
+			c.HostPort,
+			c.LastUsedAt,
+		)
+		return err
+	})
 }
 
 func GetContainerByID(db *sql.DB, id string) (*models.Container, error) {
@@ -92,7 +94,7 @@ func GetContainerByID(db *sql.DB, id string) (*models.Container, error) {
 	return c, err
 }
 
-func GetContainersByFunction(db *sql.DB, functionID int) ([]models.Container, error) {
+func GetContainersByFunction(db *sql.DB, functionID string) ([]models.Container, error) {
 
 	query := "SELECT " + containerColumns + " FROM containers WHERE function_id=?"
 
@@ -117,7 +119,7 @@ func GetContainersByFunction(db *sql.DB, functionID int) ([]models.Container, er
 	return containers, nil
 }
 
-func GetFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
+func GetFreeContainer(db *sql.DB, functionID string) (*models.Container, error) {
 
 	query := `
 	SELECT ` + containerColumns + `

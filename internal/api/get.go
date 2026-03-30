@@ -11,8 +11,8 @@ type GetFunctionsResponse struct {
 	Functions any `json:"functions"`
 }
 
-// GreetHandler returns a JSON greeting message.
-// Requires a "name" query parameter.
+// GetFunctionsHandler returns a list of all deployed functions.
+// Queries the database and returns function metadata.
 func GetFunctionsHandler(w http.ResponseWriter, r *http.Request) {
 
 	functions, err := store.ListFunctions(sqlite.DB)

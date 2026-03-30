@@ -7,6 +7,7 @@ import (
 	"faas-engine-go/internal/sqlite/models"
 	"faas-engine-go/internal/sqlite/store"
 	"log/slog"
+	"sync"
 
 	"github.com/robfig/cron/v3"
 )
@@ -16,18 +17,22 @@ type FunctionStore interface {
 }
 
 type SchedulerService struct {
-	cron      *cron.Cron
-	invoker   core.Invoker
-	entries   map[string]cron.EntryID // scheduleID → entryID
-	semaphore chan struct{}
+	cron               *cron.Cron
+	invoker            core.Invoker
+	entries            map[string]cron.EntryID  // scheduleID → entryID
+	scheduleSemaphores map[string]chan struct{} // scheduleID → semaphore (per-schedule concurrency guard)
+	semaphoreMu        sync.Mutex               // protects scheduleSemaphores map
 }
 
 func NewSchedulerService(invoker core.Invoker) *SchedulerService {
+	// Configure cron to accept 6-field format (with seconds) to match API validation
+	// This ensures schedules loaded from DB are registered correctly
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	return &SchedulerService{
-		cron:      cron.New(),
-		invoker:   invoker,
-		entries:   make(map[string]cron.EntryID),
-		semaphore: make(chan struct{}, 1),
+		cron:               cron.New(cron.WithParser(parser)),
+		invoker:            invoker,
+		entries:            make(map[string]cron.EntryID),
+		scheduleSemaphores: make(map[string]chan struct{}),
 	}
 }
 
@@ -51,7 +56,31 @@ func (s *SchedulerService) LoadSchedules() error {
 		return err
 	}
 
+	var orphanedCount int
 	for _, sch := range schedules {
+		// Validate that the function still exists before registering the schedule
+		fn, err := store.GetFunctionByID(sqlite.DB, sch.FunctionID)
+		if err != nil || fn == nil {
+			// Function does not exist - this is an orphaned schedule entry
+			slog.Warn("orphaned_schedule_detected",
+				"schedule_id", sch.ID,
+				"function_id", sch.FunctionID,
+				"reason", "function_not_found",
+			)
+
+			// Delete the orphaned schedule from the database
+			if err := store.DeleteSchedule(sqlite.DB, sch.ID); err != nil {
+				slog.Error("failed_to_delete_orphaned_schedule",
+					"schedule_id", sch.ID,
+					"error", err,
+				)
+			} else {
+				orphanedCount++
+			}
+			continue
+		}
+
+		// Function exists - safe to register the schedule
 		if err := s.RegisterSchedule(sch); err != nil {
 			slog.Error("failed_to_register_schedule",
 				"id", sch.ID,
@@ -60,7 +89,11 @@ func (s *SchedulerService) LoadSchedules() error {
 		}
 	}
 
-	slog.Info("schedules_loaded", "count", len(schedules))
+	slog.Info("schedules_loaded",
+		"total", len(schedules),
+		"registered", len(schedules)-orphanedCount,
+		"orphaned_deleted", orphanedCount,
+	)
 	return nil
 }
 
@@ -72,10 +105,29 @@ func (s *SchedulerService) RegisterSchedule(sch models.Schedule) error {
 		return nil
 	}
 
+	// Create per-schedule semaphore to prevent concurrent invocations
+	// of the same schedule (e.g., if cron fires every 1s but invocation takes 5s)
+	s.semaphoreMu.Lock()
+	if _, exists := s.scheduleSemaphores[sch.ID]; !exists {
+		s.scheduleSemaphores[sch.ID] = make(chan struct{}, 1)
+	}
+	semaphore := s.scheduleSemaphores[sch.ID]
+	s.semaphoreMu.Unlock()
+
 	entryID, err := s.cron.AddFunc(sch.CronExpr, func() {
 
-		s.semaphore <- struct{}{}
-		defer func() { <-s.semaphore }()
+		// Try to acquire the semaphore without blocking if already busy.
+		// If the previous invocation is still running, skip this execution.
+		select {
+		case semaphore <- struct{}{}:
+			defer func() { <-semaphore }()
+		default:
+			slog.Warn("schedule_skipped_busy",
+				"schedule_id", sch.ID,
+				"reason", "previous_invocation_still_running",
+			)
+			return
+		}
 
 		ctx := context.Background()
 
@@ -116,6 +168,11 @@ func (s *SchedulerService) RemoveSchedule(scheduleID string) {
 	if entryID, ok := s.entries[scheduleID]; ok {
 		s.cron.Remove(entryID)
 		delete(s.entries, scheduleID)
+
+		// Clean up the per-schedule semaphore
+		s.semaphoreMu.Lock()
+		delete(s.scheduleSemaphores, scheduleID)
+		s.semaphoreMu.Unlock()
 
 		slog.Info("schedule_removed", "id", scheduleID)
 	}

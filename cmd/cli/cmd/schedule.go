@@ -85,6 +85,11 @@ var scheduleListCmd = &cobra.Command{
 
 		url := fmt.Sprintf("%s/schedules", serverAddr)
 
+		// Add optional query parameter for function filtering (server-side filtering)
+		if functionFilter != "" {
+			url = fmt.Sprintf("%s?function=%s", url, functionFilter)
+		}
+
 		resp, err := http.Get(url)
 		if err != nil {
 			return err
@@ -113,22 +118,12 @@ var scheduleListCmd = &cobra.Command{
 
 		// Header
 		fmt.Println()
-		header.Printf("%-10s %-15s %-20s\n", "ID", "FUNCTION", "CRON")
+		header.Printf("%-37s %-15s %-20s\n", "ID", "FUNCTION", "CRON")
 		border.Println("----------------------------------------------------------")
 
 		for _, s := range schedules {
 
-			if functionFilter != "" && s.Functionname != functionFilter {
-				continue
-			}
-
-			// Short ID for better UX
-			shortID := s.ID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-
-			idCol.Printf("%-10s ", shortID)
+			idCol.Printf("%-37s ", s.ID)
 			fnCol.Printf("%-15s ", s.Functionname)
 			cronCol.Printf("%-20s\n", s.Cron)
 		}

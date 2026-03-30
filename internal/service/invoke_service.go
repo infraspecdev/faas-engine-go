@@ -210,6 +210,14 @@ func (f *FunctionInvoker) completeInvocation(
 		logs,
 		inv.StartedAt,
 	)
+
+	// Mark container as free and update last_used timestamp
+	// This prevents cleanup from deleting it prematurely
+	if containerID != "" {
+		if err := store.MarkContainerFree(sqlite.DB, containerID); err != nil {
+			slog.Warn("container_free_failed", "container_id", containerID, "error", err)
+		}
+	}
 }
 
 func (f *FunctionInvoker) createAndStart(ctx context.Context, name, image string) (string, error) {
@@ -282,7 +290,7 @@ func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string
 	return fmt.Errorf("container did not become healthy in time")
 }
 
-func (f *FunctionInvoker) persistContainer(fnID int, containerID, hostPort string) {
+func (f *FunctionInvoker) persistContainer(fnID string, containerID, hostPort string) {
 
 	store.CreateContainer(sqlite.DB, &models.Container{
 		ID:         containerID,

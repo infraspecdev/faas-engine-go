@@ -78,7 +78,6 @@ func main() {
 
 	r.HandleFunc("/schedules/{functionName}", api.CreateScheduleHandler(scheduler)).Methods("POST")
 	r.HandleFunc("/schedules", api.ListSchedulesHandler()).Methods("GET")
-	r.HandleFunc("/schedules/{functionName}", api.ListScheduleByFunctionNameHandler(scheduler)).Methods("GET")
 	r.HandleFunc("/schedules/{id}", api.DeleteScheduleHandler(scheduler)).Methods("DELETE")
 	// Create server instance
 	srv := &http.Server{

@@ -26,7 +26,13 @@ func InitDB() error {
 		return err
 	}
 	DB.Exec("PRAGMA journal_mode = WAL;")
-	DB.Exec("PRAGMA busy_timeout = 5000;")
+	DB.Exec("PRAGMA busy_timeout = 10000;") // 10 second timeout for lock waits
+
+	// Optimize for concurrent writes
+	DB.SetMaxOpenConns(25)   // Allow up to 25 concurrent connections
+	DB.SetMaxIdleConns(5)    // Keep 5 idle connections ready
+	DB.SetConnMaxLifetime(0) // No lifetime limit (SQLite doesn't need it)
+
 	return nil
 }
 
@@ -36,7 +42,7 @@ func InitTables() error {
 
 		//  FUNCTIONS
 		`CREATE TABLE IF NOT EXISTS functions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			name TEXT,
 			version TEXT,
 			package_checksum TEXT,
@@ -51,7 +57,7 @@ func InitTables() error {
 		//  CONTAINERS
 		`CREATE TABLE IF NOT EXISTS containers (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER,
+			function_id TEXT,
 			status TEXT,
 			host_port TEXT,
 			last_used TIMESTAMP,
@@ -62,7 +68,7 @@ func InitTables() error {
 		//  INVOCATIONS
 		`CREATE TABLE IF NOT EXISTS invocations (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER,
+			function_id TEXT,
 			container_id TEXT,
 			trigger_type TEXT,
 			status TEXT,
@@ -78,7 +84,7 @@ func InitTables() error {
 		//  SCHEDULES
 		`CREATE TABLE IF NOT EXISTS schedules (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER NOT NULL,
+			function_id TEXT NOT NULL,
 			cron_expr TEXT NOT NULL,
 			payload TEXT, -- changed from BLOB → TEXT
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

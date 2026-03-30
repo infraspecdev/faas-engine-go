@@ -26,9 +26,9 @@ func setupInvocationDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func newInvocation(status string) *models.Invocation {
+func newInvocation(fnID string, status string) *models.Invocation {
 	return &models.Invocation{
-		FunctionID:      1,
+		FunctionID:      fnID,
 		ContainerID:     "c1",
 		TriggerType:     "http",
 		Status:          status,
@@ -44,8 +44,10 @@ func newInvocation(status string) *models.Invocation {
 
 func TestCreateAndGetInvocation(t *testing.T) {
 	db := setupInvocationDB(t)
+	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
 
-	inv := newInvocation("pending")
+	fnID := createTestFunction(db, "test-func", "v1")
+	inv := newInvocation(fnID, "pending")
 
 	if err := CreateInvocation(db, inv); err != nil {
 		t.Fatal(err)
@@ -76,8 +78,10 @@ func TestGetInvocationByID_NotFound(t *testing.T) {
 
 func TestMarkInvocationRunning(t *testing.T) {
 	db := setupInvocationDB(t)
+	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
 
-	inv := newInvocation("pending")
+	fnID := createTestFunction(db, "test-func", "v1")
+	inv := newInvocation(fnID, "pending")
 	_ = CreateInvocation(db, inv)
 
 	if err := MarkInvocationRunning(db, inv.ID, "container-1"); err != nil {
@@ -93,10 +97,13 @@ func TestMarkInvocationRunning(t *testing.T) {
 
 func TestCompleteInvocation(t *testing.T) {
 	db := setupInvocationDB(t)
+	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+
+	fnID := createTestFunction(db, "test-func", "v1")
 
 	start := time.Now().Add(-2 * time.Second)
 
-	inv := newInvocation("pending")
+	inv := newInvocation(fnID, "pending")
 	_ = CreateInvocation(db, inv)
 
 	if err := CompleteInvocation(
@@ -124,12 +131,15 @@ func TestCompleteInvocation(t *testing.T) {
 
 func TestListInvocationsByFunction(t *testing.T) {
 	db := setupInvocationDB(t)
+	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+
+	fnID := createTestFunction(db, "test-func", "v1")
 
 	for i := 0; i < 3; i++ {
-		_ = CreateInvocation(db, newInvocation("pending"))
+		_ = CreateInvocation(db, newInvocation(fnID, "pending"))
 	}
 
-	list, err := ListInvocationsByFunction(db, 1, 2)
+	list, err := ListInvocationsByFunction(db, fnID, 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,9 +151,12 @@ func TestListInvocationsByFunction(t *testing.T) {
 
 func TestListInvocationsByStatus(t *testing.T) {
 	db := setupInvocationDB(t)
+	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
 
-	_ = CreateInvocation(db, newInvocation("success"))
-	_ = CreateInvocation(db, newInvocation("failed"))
+	fnID := createTestFunction(db, "test-func", "v1")
+
+	_ = CreateInvocation(db, newInvocation(fnID, "success"))
+	_ = CreateInvocation(db, newInvocation(fnID, "failed"))
 
 	list, err := ListInvocationsByStatus(db, "success", 10)
 	if err != nil {

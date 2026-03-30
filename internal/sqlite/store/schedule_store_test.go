@@ -8,9 +8,11 @@ import (
 func TestCreateSchedule(t *testing.T) {
 	db := setupTestDB(t)
 
+	fnID := createTestFunction(db, "test-func", "v1")
+
 	s := &models.Schedule{
 		ID:         "sched-1",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 1m",
 		Payload:    []byte("data"),
 	}
@@ -32,9 +34,11 @@ func TestCreateSchedule(t *testing.T) {
 func TestGetScheduleByID(t *testing.T) {
 	db := setupTestDB(t)
 
+	fnID := createTestFunction(db, "test-func", "v1")
+
 	s := &models.Schedule{
 		ID:         "sched-1",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 1m",
 		Payload:    []byte("data"),
 	}
@@ -69,18 +73,18 @@ func TestGetScheduleByID_NotFound(t *testing.T) {
 func TestListSchedules(t *testing.T) {
 	db := setupTestDB(t)
 
-	createTestFunction(db, "test-func", "v1")
+	fnID := createTestFunction(db, "test-func", "v1")
 
 	s1 := &models.Schedule{
 		ID:         "sched-1",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 1m",
 		Payload:    []byte("data1"),
 	}
 
 	s2 := &models.Schedule{
 		ID:         "sched-2",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 2m",
 		Payload:    []byte("data2"),
 	}
@@ -104,9 +108,11 @@ func TestListSchedules(t *testing.T) {
 func TestDeleteSchedule(t *testing.T) {
 	db := setupTestDB(t)
 
+	fnID := createTestFunction(db, "test-func", "v1")
+
 	s := &models.Schedule{
 		ID:         "sched-1",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 1m",
 		Payload:    []byte("data"),
 	}
@@ -138,11 +144,11 @@ func TestDeleteSchedule_NotFound(t *testing.T) {
 func TestListSchedulesByFunctionName(t *testing.T) {
 	db := setupTestDB(t)
 
-	createTestFunction(db, "test-func", "v1")
+	fnID := createTestFunction(db, "test-func", "v1")
 
 	s := &models.Schedule{
 		ID:         "sched-1",
-		FunctionID: 1,
+		FunctionID: fnID,
 		CronExpr:   "@every 1m",
 		Payload:    []byte("data"),
 	}

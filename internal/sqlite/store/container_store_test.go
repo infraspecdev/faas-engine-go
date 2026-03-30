@@ -30,7 +30,7 @@ func TestCreateAndGetContainer(t *testing.T) {
 
 	c := &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 		HostPort:   "8080",
 		LastUsedAt: time.Now(),
@@ -67,11 +67,11 @@ func TestGetContainerByID_NotFound(t *testing.T) {
 func TestGetContainersByFunction(t *testing.T) {
 	db := setupContainerDB(t)
 
-	_ = CreateContainer(db, &models.Container{ID: "c1", FunctionID: 1, Status: "free"})
-	_ = CreateContainer(db, &models.Container{ID: "c2", FunctionID: 1, Status: "busy"})
-	_ = CreateContainer(db, &models.Container{ID: "c3", FunctionID: 2, Status: "free"})
+	_ = CreateContainer(db, &models.Container{ID: "c1", FunctionID: "fn-123", Status: "free"})
+	_ = CreateContainer(db, &models.Container{ID: "c2", FunctionID: "fn-123", Status: "busy"})
+	_ = CreateContainer(db, &models.Container{ID: "c3", FunctionID: "fn-456", Status: "free"})
 
-	list, err := GetContainersByFunction(db, 1)
+	list, err := GetContainersByFunction(db, "fn-123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,19 +89,19 @@ func TestGetFreeContainer(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "old",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 		LastUsedAt: old,
 	})
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "new",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 		LastUsedAt: new,
 	})
 
-	res, err := GetFreeContainer(db, 1)
+	res, err := GetFreeContainer(db, "fn-123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,11 +116,11 @@ func TestGetFreeContainer_None(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "busy",
 	})
 
-	res, err := GetFreeContainer(db, 1)
+	res, err := GetFreeContainer(db, "fn-123")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ func TestMarkContainerBusy(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 	})
 
@@ -156,7 +156,7 @@ func TestMarkContainerFree(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "busy",
 	})
 
@@ -179,7 +179,7 @@ func TestUpdateContainerLastUsed(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 		LastUsedAt: old,
 	})
@@ -203,14 +203,14 @@ func TestCleanupIdleContainers(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 		LastUsedAt: old,
 	})
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c2",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "busy",
 		LastUsedAt: old,
 	})
@@ -233,7 +233,7 @@ func TestRemoveContainer(t *testing.T) {
 
 	_ = CreateContainer(db, &models.Container{
 		ID:         "c1",
-		FunctionID: 1,
+		FunctionID: "fn-123",
 		Status:     "free",
 	})
 
