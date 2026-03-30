@@ -12,10 +12,6 @@ import (
 	"faas-engine-go/internal/sqlite/models"
 )
 
-type FunctionDeleter interface {
-	DeleteFunction(name string) ([]string, error)
-}
-
 type DeleteStore interface {
 	ListFunctionVersions(name string) ([]models.Function, error)
 	DeleteFunction(name string) error
@@ -39,7 +35,7 @@ type functionDeleteService struct {
 	retry    RetryFunc
 }
 
-func NewFunctionDeleteService(s DeleteStore, r RegistryClient) FunctionDeleter {
+func NewFunctionDeleteService(s DeleteStore, r RegistryClient) *functionDeleteService {
 	return &functionDeleteService{
 		store:    s,
 		registry: r,
