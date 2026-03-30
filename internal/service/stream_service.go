@@ -177,7 +177,7 @@ func (s *LogStreamService) GetFunctionID(name string) (int, error) {
 	}
 
 	if fn == nil {
-		return 0, fmt.Errorf("function not found")
+		return 0, ErrFunctionNotFound
 	}
 
 	return fn.ID, nil

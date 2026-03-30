@@ -10,9 +10,9 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-var DB *sql.DB
+var db *sql.DB
 
-func InitDB() error {
+func InitDB() (*sql.DB, error) {
 	dbURL := os.Getenv("DB_URL")
 
 	if dbURL == "" {
@@ -22,27 +22,31 @@ func InitDB() error {
 	if strings.HasPrefix(dbURL, "/") {
 		dir := filepath.Dir(dbURL)
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create db dir: %w", err)
+			return nil, fmt.Errorf("failed to create db dir: %w", err)
 		}
 	}
 
 	var err error
-	DB, err = sql.Open("sqlite", dbURL)
+	db, err = sql.Open("sqlite", dbURL)
 	if err != nil {
-		return fmt.Errorf("failed to open db: %w", err)
+		return nil, fmt.Errorf("failed to open db: %w", err)
 	}
 
-	if _, err := DB.Exec("PRAGMA journal_mode=WAL;"); err != nil {
-		return fmt.Errorf("failed to enable WAL: %w", err)
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		return nil, fmt.Errorf("failed to enable WAL: %w", err)
 	}
 
-	if err := DB.Ping(); err != nil {
-		return fmt.Errorf("failed to ping db: %w", err)
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
 
 	fmt.Println("Using DB:", dbURL)
 
-	return nil
+	return db, nil
+}
+
+func SetDB(conn *sql.DB) {
+	db = conn
 }
 
 func InitTables() error {
@@ -120,7 +124,7 @@ func InitTables() error {
 	}
 
 	for _, q := range queries {
-		if _, err := DB.Exec(q); err != nil {
+		if _, err := db.Exec(q); err != nil {
 			return err
 		}
 	}

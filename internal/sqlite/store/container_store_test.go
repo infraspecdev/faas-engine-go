@@ -16,7 +16,7 @@ func setupContainerDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 
-	sqlite.DB = db
+	sqlite.SetDB(db)
 
 	if err := sqlite.InitTables(); err != nil {
 		t.Fatal(err)
@@ -174,7 +174,7 @@ func TestCleanupIdleContainers(t *testing.T) {
 
 	var deleted []string
 
-	CleanupIdleContainers(5*time.Minute, func(id string) {
+	CleanupIdleContainers(db, 5*time.Minute, func(id string) {
 		deleted = append(deleted, id)
 	})
 

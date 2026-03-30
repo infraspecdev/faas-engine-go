@@ -2,7 +2,6 @@ package store
 
 import (
 	"database/sql"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	"time"
 )
@@ -163,11 +162,11 @@ func UpdateContainerLastUsed(db *sql.DB, id string) error {
 	return err
 }
 
-func CleanupIdleContainers(timeout time.Duration, cleanup func(string)) {
+func CleanupIdleContainers(db *sql.DB, timeout time.Duration, cleanup func(string)) {
 
 	cutoff := time.Now().Add(-timeout)
 
-	rows, err := sqlite.DB.Query(`
+	rows, err := db.Query(`
 		UPDATE containers
 		SET status='deleting'
 		WHERE id IN (

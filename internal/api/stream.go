@@ -15,6 +15,8 @@ type LogStreamer interface {
 	GetFunctionID(name string) (int, error)
 }
 
+// LogStreamHandler handles HTTP requests for streaming function logs.
+// It expects the "functionName" path parameter and sends server-sent events with log lines.
 func LogStreamHandler(streamer LogStreamer) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

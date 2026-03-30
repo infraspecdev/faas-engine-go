@@ -140,23 +140,26 @@ func (d *DockerClient) TagImage(ctx context.Context, source string, target strin
 // PushImage pushes a tagged Docker image to its configured registry.
 // Returns an error if the push fails.
 func (d *DockerClient) PushImage(ctx context.Context, target string) error {
+	username := config.RegistryUsername()
+	password := config.RegistryPassword()
 
-	auth := map[string]string{
-		"username":      "",
-		"password":      "",
-		"serveraddress": config.Registry(),
+	opts := client.ImagePushOptions{}
+	if username != "" || password != "" {
+		auth := map[string]string{
+			"username":      username,
+			"password":      password,
+			"serveraddress": config.Registry(),
+		}
+
+		authJSON, err := json.Marshal(auth)
+		if err != nil {
+			return fmt.Errorf("failed to marshal registry auth: %w", err)
+		}
+
+		opts.RegistryAuth = base64.StdEncoding.EncodeToString(authJSON)
 	}
 
-	authJSON, err := json.Marshal(auth)
-	if err != nil {
-		return fmt.Errorf("failed to marshal registry auth: %w", err)
-	}
-
-	encodedAuth := base64.StdEncoding.EncodeToString(authJSON)
-
-	imagePush, err := d.cli.ImagePush(ctx, target, client.ImagePushOptions{
-		RegistryAuth: encodedAuth,
-	})
+	imagePush, err := d.cli.ImagePush(ctx, target, opts)
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
 	}

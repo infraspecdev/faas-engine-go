@@ -53,7 +53,7 @@ func TestFunctionVersionsHandler_NotFound(t *testing.T) {
 
 	mock := &mockVersionService{
 		getFn: func(name string) ([]service.VersionInfo, error) {
-			return nil, errors.New("function not found")
+			return nil, service.ErrFunctionNotFound
 		},
 	}
 

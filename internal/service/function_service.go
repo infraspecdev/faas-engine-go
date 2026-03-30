@@ -1,8 +1,6 @@
 package service
 
 import (
-	"fmt"
-
 	"faas-engine-go/internal/sqlite/models"
 )
 
@@ -31,7 +29,7 @@ func (s *FunctionVersionService) GetVersions(name string) ([]VersionInfo, error)
 	}
 
 	if len(fns) == 0 {
-		return nil, fmt.Errorf("function not found")
+		return nil, ErrFunctionNotFound
 	}
 
 	var result []VersionInfo

@@ -1,9 +1,8 @@
 package service
 
 import (
-	"fmt"
+	"database/sql"
 
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	"faas-engine-go/internal/sqlite/store"
 )
@@ -22,31 +21,31 @@ type LogService struct {
 	getFunctionByVersion func(name, version string) (int, error)
 }
 
-func NewLogService() *LogService {
+func NewLogService(db *sql.DB) *LogService {
 	return &LogService{
 
 		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
-			return store.GetInvocationLogsByFunction(sqlite.DB, functionID, limit)
+			return store.GetInvocationLogsByFunction(db, functionID, limit)
 		},
 
 		getActiveFunctionID: func(name string) (int, error) {
-			fn, err := store.GetActiveFunction(sqlite.DB, name)
+			fn, err := store.GetActiveFunction(db, name)
 			if err != nil {
 				return 0, err
 			}
 			if fn == nil {
-				return 0, fmt.Errorf("active function not found")
+				return 0, ErrFunctionNotFound
 			}
 			return fn.ID, nil
 		},
 
 		getFunctionByVersion: func(name, version string) (int, error) {
-			fn, err := store.GetFunctionByNameAndVersion(sqlite.DB, name, version)
+			fn, err := store.GetFunctionByNameAndVersion(db, name, version)
 			if err != nil {
 				return 0, err
 			}
 			if fn == nil {
-				return 0, fmt.Errorf("function version not found")
+				return 0, ErrFunctionNotFound
 			}
 			return fn.ID, nil
 		},

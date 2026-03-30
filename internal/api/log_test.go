@@ -108,7 +108,7 @@ func TestLogHandler_NotFoundError(t *testing.T) {
 
 	mock := &mockLogger{
 		byNameFn: func(name string, limit int) ([]service.LogEntry, error) {
-			return nil, errors.New("function not found")
+			return nil, service.ErrFunctionNotFound
 		},
 	}
 

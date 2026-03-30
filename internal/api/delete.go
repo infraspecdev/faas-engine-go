@@ -20,6 +20,8 @@ type FunctionDeleter interface {
 	DeleteFunction(name string) ([]string, error)
 }
 
+// DeleteFunctionHandler handles HTTP requests to delete a function by name.
+// It expects the "functionName" path parameter and returns JSON with success or failure details.
 func DeleteFunctionHandler(svc FunctionDeleter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

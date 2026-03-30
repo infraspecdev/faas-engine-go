@@ -7,15 +7,14 @@ import (
 )
 
 type GetFunctionsResponse struct {
-	Functions any `json:"functions"`
+	Functions []models.Function `json:"functions"`
 }
 
 type FunctionLister interface {
 	ListFunctions() ([]models.Function, error)
 }
 
-// GreetHandler returns a JSON greeting message.
-// Requires a "name" query parameter.
+// ListFunctionsHandler returns a JSON list of available functions.
 func ListFunctionsHandler(svc FunctionLister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

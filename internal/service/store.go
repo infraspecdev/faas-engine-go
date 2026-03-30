@@ -2,7 +2,6 @@ package service
 
 import (
 	"database/sql"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	sqlstore "faas-engine-go/internal/sqlite/store"
 	"time"
@@ -36,8 +35,8 @@ type realStore struct {
 
 var _ Store = (*realStore)(nil)
 
-func NewStore() Store {
-	return &realStore{db: sqlite.DB}
+func NewStore(db *sql.DB) Store {
+	return &realStore{db: db}
 }
 
 func (s *realStore) GetActiveFunction(name string) (*models.Function, error) {

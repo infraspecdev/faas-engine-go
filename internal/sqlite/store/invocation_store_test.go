@@ -17,7 +17,7 @@ func setupInvocationDB(t *testing.T) *sql.DB {
 		t.Fatal(err)
 	}
 
-	sqlite.DB = db
+	sqlite.SetDB(db)
 
 	if err := sqlite.InitTables(); err != nil {
 		t.Fatal(err)

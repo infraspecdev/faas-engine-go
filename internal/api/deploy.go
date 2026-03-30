@@ -3,8 +3,8 @@ package api
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"faas-engine-go/internal/config"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	"faas-engine-go/internal/sqlite/store"
 	"fmt"
@@ -25,24 +25,29 @@ type FunctionStore interface {
 	CreateFunction(fn *models.Function) error
 }
 
-type realFunctionStore struct{}
+type realFunctionStore struct {
+	db *sql.DB
+}
 
-func NewFunctionStore() FunctionStore {
-	return &realFunctionStore{}
+func NewFunctionStore(db *sql.DB) FunctionStore {
+	return &realFunctionStore{db: db}
 }
 
 func (r *realFunctionStore) GetNextVersion(name string) (string, error) {
-	return store.GetNextVersion(sqlite.DB, name)
+	return store.GetNextVersion(r.db, name)
 }
 
 func (r *realFunctionStore) DeactivateFunctions(name string) error {
-	return store.DeactivateFunctions(sqlite.DB, name)
+	return store.DeactivateFunctions(r.db, name)
 }
 
 func (r *realFunctionStore) CreateFunction(fn *models.Function) error {
-	return store.CreateFunction(sqlite.DB, fn)
+	return store.CreateFunction(r.db, fn)
 }
 
+// DeployHandler handles HTTP requests to deploy a function.
+// It expects multipart form data containing the function package and the optional "name" field.
+// The handler streams deployment progress and returns a deployment status trailer.
 func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -53,6 +58,7 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 		}
 
 		w.Header().Set("Content-Type", "text/plain")
+		w.Header().Add("Trailer", "X-Deploy-Status")
 
 		r.Body = http.MaxBytesReader(w, r.Body, config.MaxUploadSize)
 
@@ -78,10 +84,12 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 		nameParam := r.FormValue("name")
 
 		out := &flushWriter{w, flusher}
+		w.WriteHeader(http.StatusOK)
 
 		err = deployer.Deploy(r.Context(), nameParam, file, out)
 		if err != nil {
-			_, _ = fmt.Fprintf(out, "\nERROR: %s\n", err)
+			_, _ = fmt.Fprintf(out, "\nERROR: %s\nSTREAM_STATUS: ERROR\n", err)
+			w.Header().Set("X-Deploy-Status", "ERROR")
 			return
 		}
 
@@ -131,7 +139,8 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			fmt.Fprintf(out, "\nWARNING: function deployed but DB insert failed\n")
 		}
 
-		_, _ = fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n", nameParam)
+		_, _ = fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n\n", nameParam)
+		w.Header().Set("X-Deploy-Status", "OK")
 	}
 }
 

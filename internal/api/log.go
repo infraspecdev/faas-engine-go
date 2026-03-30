@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,6 +17,8 @@ type Logger interface {
 	GetLogsByNameAndVersion(functionName, version string, limit int) ([]service.LogEntry, error)
 }
 
+// LogHandler handles HTTP requests for fetching function logs.
+// It expects the "functionName" path parameter and optional "version" and "limit" query parameters.
 func LogHandler(logger Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -45,8 +48,8 @@ func LogHandler(logger Logger) http.HandlerFunc {
 		}
 
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				http.Error(w, err.Error(), http.StatusNotFound)
+			if errors.Is(err, service.ErrFunctionNotFound) {
+				http.Error(w, "function not found", http.StatusNotFound)
 			} else {
 				http.Error(w, "failed to fetch logs", http.StatusInternalServerError)
 			}

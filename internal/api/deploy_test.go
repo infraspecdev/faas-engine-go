@@ -103,6 +103,10 @@ func TestDeployHandler_Success(t *testing.T) {
 	if !strings.Contains(result, "Your function is live at: http://test-fn.localhost") {
 		t.Fatalf("unexpected response: %s", result)
 	}
+
+	if got := rr.Result().Trailer.Get("X-Deploy-Status"); got != "OK" {
+		t.Fatalf("expected trailer X-Deploy-Status=OK, got %q", got)
+	}
 }
 
 func TestDeployHandler_MissingFile(t *testing.T) {
@@ -155,5 +159,13 @@ func TestDeployHandler_InternalError(t *testing.T) {
 
 	if !strings.Contains(result, "ERROR: deploy failed") {
 		t.Fatalf("unexpected response: %s", result)
+	}
+
+	if !strings.Contains(result, "STREAM_STATUS: ERROR") {
+		t.Fatalf("missing error status marker: %s", result)
+	}
+
+	if got := rr.Result().Trailer.Get("X-Deploy-Status"); got != "ERROR" {
+		t.Fatalf("expected trailer X-Deploy-Status=ERROR, got %q", got)
 	}
 }

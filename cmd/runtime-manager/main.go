@@ -38,11 +38,9 @@ func main() {
 
 	docker := sdk.NewDockerClient(cli)
 
-	// Start background container cleanup worker
-	service.ContainerSpleen(docker)
-
 	// Initialize database (if needed)
-	if err := sqlite.InitDB(); err != nil {
+	db, err := sqlite.InitDB()
+	if err != nil {
 		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}
@@ -52,17 +50,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start background container cleanup worker
+	service.ContainerSpleen(docker, db)
+
 	// Setup router
 	r := mux.NewRouter()
-	store := service.NewStore()
+	store := service.NewStore(db)
 
-	deployService := service.NewDeployService(docker)
-	functionStore := api.NewFunctionStore()
+	deployService := service.NewDeployService(docker, db)
+	functionStore := api.NewFunctionStore(db)
 
 	invokeService := service.NewInvokeService(docker, docker, store)
 
-	logService := service.NewLogService()
-
+	logService := service.NewLogService(db)
 	functionVersionService := service.NewFunctionVersionService(store)
 
 	logStreamService := service.NewLogStreamService(docker, store)

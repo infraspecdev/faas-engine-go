@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -14,6 +15,9 @@ type FunctionVersionGetter interface {
 	GetVersions(name string) ([]service.VersionInfo, error)
 }
 
+// FunctionVersionsHandler is an HTTP handler function that retrieves the versions of a function.
+// The function expects the "functionName" parameter in the URL path.
+// It returns a JSON response with the versions of the function, or an error response if the function is not found or an internal server error occurs.
 func FunctionVersionsHandler(svc FunctionVersionGetter) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
@@ -26,8 +30,7 @@ func FunctionVersionsHandler(svc FunctionVersionGetter) http.HandlerFunc {
 
 		versions, err := svc.GetVersions(name)
 		if err != nil {
-
-			if strings.Contains(strings.ToLower(err.Error()), "function not found") {
+			if errors.Is(err, service.ErrFunctionNotFound) {
 				http.Error(w, "function not found", http.StatusNotFound)
 				return
 			}

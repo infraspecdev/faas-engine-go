@@ -16,7 +16,7 @@ func TestDeploy_Success(t *testing.T) {
 
 	fake := &fakeImageClient{}
 
-	deployer := NewDeployService(fake)
+	deployer := NewDeployService(fake, nil)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -57,7 +57,7 @@ func TestDeploy_BuildImageFail(t *testing.T) {
 		buildErr: errors.New("build failed"),
 	}
 
-	deployer := NewDeployService(fake)
+	deployer := NewDeployService(fake, nil)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -92,7 +92,7 @@ func TestDeploy_TagImageFail(t *testing.T) {
 		tagErr: errors.New("tag failed"),
 	}
 
-	deployer := NewDeployService(fake)
+	deployer := NewDeployService(fake, nil)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -127,7 +127,7 @@ func TestDeploy_PushImageFail(t *testing.T) {
 		pushErr: errors.New("push failed"),
 	}
 
-	deployer := NewDeployService(fake)
+	deployer := NewDeployService(fake, nil)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}
@@ -162,7 +162,7 @@ func TestDeploy_RemoveImageFail(t *testing.T) {
 		removeErr: errors.New("remove failed"),
 	}
 
-	deployer := NewDeployService(fake)
+	deployer := NewDeployService(fake, nil)
 	deployer.getVersion = func(name string) (string, error) {
 		return "v1", nil
 	}

@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/store"
 	"fmt"
 	"io"
@@ -18,11 +18,11 @@ type Deployer struct {
 	getVersion  func(name string) (string, error)
 }
 
-func NewDeployService(img sdk.ImageClient) *Deployer {
+func NewDeployService(img sdk.ImageClient, db *sql.DB) *Deployer {
 	return &Deployer{
 		imageClient: img,
 		getVersion: func(name string) (string, error) {
-			return store.GetNextVersion(sqlite.DB, name)
+			return store.GetNextVersion(db, name)
 		},
 	}
 }

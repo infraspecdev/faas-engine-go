@@ -35,7 +35,7 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		return nil, fmt.Errorf("failed to fetch function: %w", err)
 	}
 	if fn == nil {
-		return nil, fmt.Errorf("function not found")
+		return nil, ErrFunctionNotFound
 	}
 
 	inv := &models.Invocation{
