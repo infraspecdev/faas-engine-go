@@ -8,6 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite"
 
 	"github.com/moby/moby/api/types/container"
@@ -193,6 +194,10 @@ func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID 
 	return client.ContainerInspectResult{
 		Container: resp,
 	}, nil
+}
+
+func (f *fakeContainerClient) ListContainers(ctx context.Context) ([]sdk.ContainerInfo, error) {
+	return []sdk.ContainerInfo{}, nil
 }
 
 /*

@@ -73,6 +73,9 @@ func (d *DockerClient) CreateContainer(
 			ExposedPorts: network.PortSet{
 				containerPort: struct{}{},
 			},
+			Labels: map[string]string{
+				"faas-engine": "true",
+			},
 		},
 		HostConfig: &container.HostConfig{
 			PortBindings: network.PortMap{
@@ -293,4 +296,34 @@ func cleanDockerLogs(raw []byte) string {
 	}
 
 	return string(result)
+}
+
+// ListContainers returns all faas-engine labeled containers (running, stopped, and exited)
+func (d *DockerClient) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
+	result, err := d.cli.ContainerList(ctx, client.ContainerListOptions{
+		All: true, // Include stopped and exited containers
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var containerInfos []ContainerInfo
+	filtered := 0
+	for _, c := range result.Items {
+		// Filter to only include containers with the faas-engine label
+		if c.Labels["faas-engine"] == "true" {
+			containerInfos = append(containerInfos, ContainerInfo{
+				ID:    c.ID,
+				State: string(c.State),
+			})
+		} else {
+			filtered++
+		}
+	}
+
+	if len(result.Items) > 0 && len(containerInfos) > 0 {
+		slog.Debug("containers listed", "total", len(result.Items), "labeled", len(containerInfos), "filtered_out", filtered)
+	}
+
+	return containerInfos, nil
 }

@@ -67,7 +67,14 @@ var scheduleCreateCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusCreated {
-			return fmt.Errorf("failed: %s", resp.Status)
+			// Parse error response to get detailed message
+			var errResp map[string]string
+			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+				if errMsg, ok := errResp["error"]; ok {
+					return fmt.Errorf("failed to create schedule: %s", errMsg)
+				}
+			}
+			return fmt.Errorf("failed to create schedule: %s", resp.Status)
 		}
 
 		fmt.Println("✅ schedule created successfully")
@@ -160,10 +167,17 @@ var scheduleDeleteCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed: %s", resp.Status)
+			// Parse error response to get detailed message
+			var errResp map[string]string
+			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+				if errMsg, ok := errResp["error"]; ok {
+					return fmt.Errorf("failed to delete schedule: %s", errMsg)
+				}
+			}
+			return fmt.Errorf("failed to delete schedule: %s", resp.Status)
 		}
 
-		fmt.Println("schedule deleted successfully")
+		fmt.Println("✅ schedule deleted successfully")
 		return nil
 	},
 }

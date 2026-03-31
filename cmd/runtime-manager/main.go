@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"faas-engine-go/internal/api"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/service"
 	"faas-engine-go/internal/sqlite"
@@ -11,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -100,16 +100,28 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	<-quit
-	slog.Info("shutdown signal received")
+	slog.Info("shutdown signal received, initiating graceful shutdown")
 
+	// Phase 1: Stop scheduler (prevents new triggers)
 	scheduler.Stop()
-	// Create timeout context for graceful shutdown
-	ctx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
+	slog.Info("scheduler stopped")
 
+	// Phase 2: Shutdown HTTP server (waits for in-flight requests)
+	ctx, shutdownCancel := context.WithTimeout(context.Background(), config.ServerShutdownTimeout)
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server forced to shutdown", "error", err)
 	} else {
-		slog.Info("server exited gracefully")
+		slog.Info("http server exited gracefully")
 	}
+	shutdownCancel()
+
+	// Phase 3: Graceful container cleanup (stop all running containers and remove exited ones)
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), config.GracefulShutdownTimeout)
+	defer cleanupCancel()
+
+	if err := service.GracefulShutdown(cleanupCtx, docker); err != nil {
+		slog.Error("container cleanup failed", "error", err)
+	}
+
+	slog.Info("graceful shutdown completed")
 }

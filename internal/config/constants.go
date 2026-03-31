@@ -34,6 +34,14 @@ const (
 	ScheduleMinimumIntervalSeconds time.Duration = 60 * time.Second
 )
 
+// graceful shutdown related constants
+const (
+	ServerShutdownTimeout       time.Duration = 30 * time.Second
+	GracefulShutdownTimeout     time.Duration = 60 * time.Second
+	ShutdownContainerStopTime   time.Duration = 15 * time.Second
+	ShutdownContainerDeleteTime time.Duration = 10 * time.Second
+)
+
 // registry related constants
 const (
 	RegistryURL   = "localhost:5000"
