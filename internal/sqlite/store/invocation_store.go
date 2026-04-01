@@ -114,23 +114,25 @@ func CreateInvocation(db *sql.DB, inv *models.Invocation) error {
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := db.Exec(
-		query,
-		inv.ID,
-		inv.FunctionID,
-		inv.ContainerID,
-		inv.TriggerType,
-		inv.Status,
-		inv.ExitCode,
-		inv.DurationMs,
-		inv.RequestPayload,
-		inv.ResponsePayload,
-		inv.Logs,
-		inv.StartedAt,
-		inv.FinishedAt,
-	)
-
-	return err
+	// Retry with exponential backoff for database lock scenarios
+	return RetryWithBackoff(func() error {
+		_, err := db.Exec(
+			query,
+			inv.ID,
+			inv.FunctionID,
+			inv.ContainerID,
+			inv.TriggerType,
+			inv.Status,
+			inv.ExitCode,
+			inv.DurationMs,
+			inv.RequestPayload,
+			inv.ResponsePayload,
+			inv.Logs,
+			inv.StartedAt,
+			inv.FinishedAt,
+		)
+		return err
+	}, 50*time.Millisecond, 5)
 }
 
 func MarkInvocationRunning(db *sql.DB, id string, containerID string) error {
@@ -183,6 +185,68 @@ func CompleteInvocation(
 	return err
 }
 
+// CompleteInvocationAndMarkFree atomically completes an invocation and marks container as free
+// This consolidates two write operations into a single transaction for better concurrency
+func CompleteInvocationAndMarkFree(
+	db *sql.DB,
+	id string,
+	status string,
+	exitCode int,
+	response json.RawMessage,
+	logs string,
+	startedAt time.Time,
+	containerID string,
+	shouldMarkFree bool,
+) error {
+
+	tx, err := db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	// Update invocation
+	duration := int(time.Since(startedAt).Milliseconds())
+	invQuery := `
+	UPDATE invocations
+	SET status=?,
+	    exit_code=?,
+	    duration_ms=?,
+	    response_payload=?,
+	    logs=?,
+	    finished_at=?
+	WHERE id=?
+	`
+
+	if _, err := tx.Exec(
+		invQuery,
+		status,
+		exitCode,
+		duration,
+		response,
+		logs,
+		time.Now(),
+		id,
+	); err != nil {
+		return err
+	}
+
+	// Mark container as free if requested
+	if shouldMarkFree && containerID != "" {
+		containerQuery := `
+		UPDATE containers
+		SET status='free',
+		    last_used=?
+		WHERE id=?
+		`
+		if _, err := tx.Exec(containerQuery, time.Now(), containerID); err != nil {
+			return err
+		}
+	}
+
+	return tx.Commit()
+}
+
 func GetInvocationByID(db *sql.DB, id string) (*models.Invocation, error) {
 
 	query := "SELECT " + invocationColumns + " FROM invocations WHERE id=?"
@@ -197,7 +261,7 @@ func GetInvocationByID(db *sql.DB, id string) (*models.Invocation, error) {
 	return inv, err
 }
 
-func ListInvocationsByFunction(db *sql.DB, functionID int, limit int) ([]models.Invocation, error) {
+func ListInvocationsByFunction(db *sql.DB, functionID string, limit int) ([]models.Invocation, error) {
 
 	query := `
 	SELECT ` + invocationColumns + `
@@ -259,7 +323,7 @@ func ListInvocationsByStatus(db *sql.DB, status string, limit int) ([]models.Inv
 	return result, nil
 }
 
-func GetInvocationLogsByFunction(db *sql.DB, functionID int, limit int) ([]models.Invocation, error) {
+func GetInvocationLogsByFunction(db *sql.DB, functionID string, limit int) ([]models.Invocation, error) {
 
 	query := `
 	SELECT ` + invocationColumns + `

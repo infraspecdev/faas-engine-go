@@ -89,6 +89,9 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 		err = deployer.Deploy(r.Context(), nameParam, file, out)
 		if err != nil {
 			_, _ = fmt.Fprintf(out, "\nERROR: %s\nSTREAM_STATUS: ERROR\n", err)
+			// NOTE: Status code already sent (200 OK). Using trailer "X-Deploy-Status: ERROR"
+			// to signal client that deployment failed. Client should parse final lines
+			// to detect error status ("STREAM_STATUS: ERROR").
 			w.Header().Set("X-Deploy-Status", "ERROR")
 			return
 		}

@@ -40,8 +40,8 @@ func TestNewSchedulerService(t *testing.T) {
 	if s.entries == nil {
 		t.Fatal("entries map should not be nil")
 	}
-	if cap(s.semaphore) != 1 {
-		t.Fatal("semaphore capacity should be 1")
+	if s.scheduleSemaphores == nil {
+		t.Fatal("scheduleSemaphores map should not be nil")
 	}
 }
 
@@ -52,8 +52,8 @@ func TestRegisterSchedule(t *testing.T) {
 
 	sch := models.Schedule{
 		ID:         "1",
-		CronExpr:   "@every 1s",
-		FunctionID: 1,              // ✅ int
+		CronExpr:   "* * * * * *",  // Every second (6-field format)
+		FunctionID: "fn-uuid-123",  // ✅ string UUID
 		Payload:    []byte("test"), // ✅ []byte
 	}
 	err := s.RegisterSchedule(sch)
@@ -73,8 +73,8 @@ func TestRegisterDuplicateSchedule(t *testing.T) {
 
 	sch := models.Schedule{
 		ID:         "1",
-		CronExpr:   "@every 1s",
-		FunctionID: 1,              // ✅ int
+		CronExpr:   "* * * * * *",  // Every second (6-field format)
+		FunctionID: "fn-uuid-123",  // ✅ string UUID
 		Payload:    []byte("test"), // ✅ []byte
 	}
 

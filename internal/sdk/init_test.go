@@ -37,11 +37,22 @@ func TestInit_ContextCancellation(t *testing.T) {
 	}
 	defer cancel()
 
+	// Verify that ctx is independent of parent cancellation
+	// Init returns a background context that lives longer than parent
 	cancelParent()
 
-	<-ctx.Done()
+	// ctx should still be alive after parent cancellation
+	select {
+	case <-ctx.Done():
+		t.Fatal("ctx should not be cancelled when parent is cancelled")
+	default:
+		// Expected: ctx is still alive
+	}
+
+	// Only cancel via the returned cancel function should stop it
+	cancel()
 
 	if ctx.Err() != context.Canceled {
-		t.Fatalf("expected context canceled, got %v", ctx.Err())
+		t.Fatalf("expected context canceled after cancel(), got %v", ctx.Err())
 	}
 }

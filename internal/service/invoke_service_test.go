@@ -5,13 +5,15 @@ import (
 	"errors"
 	"testing"
 
+	_ "modernc.org/sqlite"
+
 	"faas-engine-go/internal/sqlite/models"
 )
 
 func TestInvoke_ReuseSuccess(t *testing.T) {
 
 	store := &fakeStore{
-		fn: &models.Function{ID: 1},
+		fn: &models.Function{ID: "1"},
 		container: &models.Container{
 			ID:       "c1",
 			HostPort: "8080",
@@ -20,10 +22,35 @@ func TestInvoke_ReuseSuccess(t *testing.T) {
 
 	con := &fakeContainerClient{
 		healthy: true,
-		port:    "8080",
 	}
 
 	invoker := NewInvokeService(con, &fakeImageClient{}, store)
+
+	_, err := invoker.Invoke(context.Background(), "test", []byte("{}"), "http")
+
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+}
+
+/*
+========================
+TESTS
+========================
+*/
+
+func TestInvoke_Success(t *testing.T) {
+	store := &fakeStore{
+		fn: &models.Function{ID: "1"},
+	}
+
+	img := &fakeImageClient{}
+	con := &fakeContainerClient{
+		healthy: true,
+		port:    "8080",
+	}
+
+	invoker := NewInvokeService(con, img, store)
 
 	res, err := invoker.Invoke(context.Background(), "test", []byte("{}"), "http")
 
@@ -39,7 +66,7 @@ func TestInvoke_ReuseSuccess(t *testing.T) {
 func TestInvoke_PullFail(t *testing.T) {
 
 	store := &fakeStore{
-		fn:        &models.Function{ID: 1},
+		fn:        &models.Function{ID: "1"},
 		container: nil, // 🔥 IMPORTANT
 	}
 
@@ -59,7 +86,7 @@ func TestInvoke_PullFail(t *testing.T) {
 func TestInvoke_CreateContainerFail(t *testing.T) {
 
 	store := &fakeStore{
-		fn:        &models.Function{ID: 1},
+		fn:        &models.Function{ID: "1"},
 		container: nil, // 🔥 IMPORTANT
 	}
 
@@ -79,7 +106,7 @@ func TestInvoke_CreateContainerFail(t *testing.T) {
 func TestInvoke_StartContainerFail(t *testing.T) {
 
 	store := &fakeStore{
-		fn:        &models.Function{ID: 1},
+		fn:        &models.Function{ID: "1"},
 		container: nil, // 🔥 IMPORTANT
 	}
 
@@ -99,7 +126,7 @@ func TestInvoke_StartContainerFail(t *testing.T) {
 func TestInvoke_UnhealthyContainer(t *testing.T) {
 
 	store := &fakeStore{
-		fn:        &models.Function{ID: 1},
+		fn:        &models.Function{ID: "1"},
 		container: nil, // 🔥 IMPORTANT
 	}
 

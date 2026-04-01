@@ -1,14 +1,20 @@
 package sdk
 
-import "github.com/moby/moby/client"
+import (
+	"context"
+
+	"github.com/moby/moby/client"
+)
 
 type DockerClient struct {
 	cli *client.Client
+	ctx context.Context
 }
 
-func NewDockerClient(cli *client.Client) *DockerClient {
+func NewDockerClient(cli *client.Client, ctx context.Context) *DockerClient {
 	return &DockerClient{
 		cli: cli,
+		ctx: ctx,
 	}
 }
 

@@ -8,8 +8,10 @@ import (
 	"time"
 
 	"faas-engine-go/internal/config"
+	"faas-engine-go/internal/core"
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite/models"
+	"faas-engine-go/internal/sqlite/store"
 
 	"github.com/moby/moby/api/types/network"
 )
@@ -17,15 +19,21 @@ import (
 type FunctionInvoker struct {
 	containerClient sdk.ContainerClient
 	imageClient     sdk.ImageClient
-	store           Store
+	store           core.Store
 }
 
-func NewInvokeService(c sdk.ContainerClient, i sdk.ImageClient, s Store) *FunctionInvoker {
+func NewInvokeService(c sdk.ContainerClient, i sdk.ImageClient, s core.Store) *FunctionInvoker {
 	return &FunctionInvoker{
 		containerClient: c,
 		imageClient:     i,
 		store:           s,
 	}
+}
+
+// retryWithBackoff is a wrapper around the unified store retry logic
+// Uses: 50ms, 100ms, 200ms, 400ms, 800ms backoff with 5 max retries
+func retryWithBackoff(operation func() error) error {
+	return store.RetryWithBackoff(operation, 50*time.Millisecond, 5)
 }
 
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte, triggerType string) (any, error) {
@@ -46,7 +54,10 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		StartedAt:      time.Now(),
 	}
 
-	if err := f.store.CreateInvocation(inv); err != nil {
+	// Retry create invocation with backoff to handle transient locks
+	if err := retryWithBackoff(func() error {
+		return f.store.CreateInvocation(inv)
+	}); err != nil {
 		return nil, fmt.Errorf("failed to create invocation: %w", err)
 	}
 
@@ -64,7 +75,12 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 	inv *models.Invocation,
 ) (any, bool, error) {
 
-	container, err := f.store.AcquireFreeContainer(fn.ID)
+	var container *models.Container
+	err := retryWithBackoff(func() error {
+		var acquireErr error
+		container, acquireErr = f.store.AcquireFreeContainer(fn.ID)
+		return acquireErr
+	})
 	if err != nil {
 		return nil, false, err
 	}
@@ -74,7 +90,10 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 		return nil, false, nil
 	}
 
-	if err := f.store.MarkInvocationRunning(inv.ID, container.ID); err != nil {
+	// Retry marking invocation as running
+	if err := retryWithBackoff(func() error {
+		return f.store.MarkInvocationRunning(inv.ID, container.ID)
+	}); err != nil {
 		slog.Error("mark invocation running failed", "error", err)
 	}
 
@@ -98,10 +117,7 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 		return nil, false, nil
 	}
 
-	if err := f.store.MarkContainerFree(container.ID); err != nil {
-		slog.Error("mark container free failed", "error", err)
-	}
-
+	// completeInvocation handles MarkContainerFree, don't call it here
 	f.completeInvocation(inv, container.ID, res, nil)
 	return res, true, nil
 }
@@ -166,71 +182,10 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 
 	logger.Info("container_lifecycle", "stage", "invoking")
 
-	if err := f.store.MarkContainerFree(containerID); err != nil {
-		slog.Error("mark container free failed", "error", err)
-	}
-
+	// completeInvocation handles MarkContainerFree, don't call it here
 	f.completeInvocation(inv, containerID, res, nil)
 
 	return res, nil
-}
-
-func (f *FunctionInvoker) createAndStart(ctx context.Context, name, image string) (string, error) {
-
-	containerID, err := f.containerClient.CreateContainer(ctx, name, image, nil)
-	if err != nil {
-		return "", fmt.Errorf("create container failed: %w", err)
-	}
-
-	if err := f.containerClient.StartContainer(ctx, containerID); err != nil {
-		return "", fmt.Errorf("start container failed: %w", err)
-	}
-
-	return containerID, nil
-}
-
-func (f *FunctionInvoker) waitForPort(ctx context.Context, containerID string) (string, error) {
-
-	port, err := network.ParsePort(config.ContainerPort)
-	if err != nil {
-		return "", fmt.Errorf("parse port failed: %w", err)
-	}
-
-	deadline := time.Now().Add(config.PortTimeout)
-
-	for time.Now().Before(deadline) {
-		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
-		if err == nil && inspect.Container.NetworkSettings != nil {
-			bindings := inspect.Container.NetworkSettings.Ports[port]
-			if len(bindings) > 0 {
-				return bindings[0].HostPort, nil
-			}
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	return "", fmt.Errorf("port not available in time")
-}
-
-func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string) error {
-
-	deadline := time.Now().Add(config.HealthTimeout)
-
-	for time.Now().Before(deadline) {
-		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
-		if err == nil && inspect.Container.State != nil {
-			if !inspect.Container.State.Running {
-				return fmt.Errorf("container exited early")
-			}
-			if inspect.Container.State.Health != nil &&
-				inspect.Container.State.Health.Status == "healthy" {
-				return nil
-			}
-		}
-		time.Sleep(300 * time.Millisecond)
-	}
-
-	return fmt.Errorf("container not healthy in time")
 }
 
 func (f *FunctionInvoker) completeInvocation(
@@ -258,7 +213,7 @@ func (f *FunctionInvoker) completeInvocation(
 		exitCode = 0
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), config.LogRetrievalTimeout)
 	defer cancel()
 
 	var logs string
@@ -270,14 +225,91 @@ func (f *FunctionInvoker) completeInvocation(
 		}
 	}
 
-	if err := f.store.CompleteInvocation(
-		inv.ID,
-		status,
-		exitCode,
-		responsePayload,
-		logs,
-		inv.StartedAt,
-	); err != nil {
-		slog.Error("complete invocation failed", "error", err)
+	// Complete invocation and mark container free in atomic operation with retries
+	// This consolidates two write operations into one transaction
+	shouldMarkFree := containerID != "" && err == nil
+	if completeErr := retryWithBackoff(func() error {
+		return f.store.CompleteInvocationAndMarkFree(
+			inv.ID,
+			status,
+			exitCode,
+			responsePayload,
+			logs,
+			inv.StartedAt,
+			containerID,
+			shouldMarkFree,
+		)
+	}); completeErr != nil {
+		slog.Error("complete invocation failed", "error", completeErr, "container_id", containerID)
 	}
+}
+
+func (f *FunctionInvoker) createAndStart(ctx context.Context, name, image string) (string, error) {
+
+	containerID, err := f.containerClient.CreateContainer(ctx, name, image, nil)
+	if err != nil {
+		slog.Error("container_create_failed", "function", name, "error", err)
+		return "", err
+	}
+
+	if err := f.containerClient.StartContainer(ctx, containerID); err != nil {
+		slog.Error("container_start_failed", "container_id", containerID, "error", err)
+		return "", err
+	}
+
+	slog.Info("container_lifecycle", "stage", "starting", "container_id", containerID)
+
+	return containerID, nil
+}
+
+func (f *FunctionInvoker) waitForPort(ctx context.Context, containerID string) (string, error) {
+
+	port, err := network.ParsePort(config.ContainerPort)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse port: %w", err)
+	}
+
+	deadline := time.Now().Add(config.PortTimeout)
+
+	for time.Now().Before(deadline) {
+
+		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
+
+		if err == nil && inspect.Container.NetworkSettings != nil {
+			bindings := inspect.Container.NetworkSettings.Ports[port]
+			if len(bindings) > 0 {
+				return bindings[0].HostPort, nil
+			}
+		}
+
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return "", fmt.Errorf("port not available in time")
+}
+
+func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string) error {
+
+	deadline := time.Now().Add(config.HealthTimeout)
+
+	for time.Now().Before(deadline) {
+
+		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
+
+		if err == nil && inspect.Container.State != nil {
+
+			if !inspect.Container.State.Running {
+				return fmt.Errorf("container exited before becoming healthy")
+			}
+
+			if inspect.Container.State.Health != nil &&
+				inspect.Container.State.Health.Status == "healthy" {
+				return nil
+			}
+		}
+
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	return fmt.Errorf("container did not become healthy in time")
 }

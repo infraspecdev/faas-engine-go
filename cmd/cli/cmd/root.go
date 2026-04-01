@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 
+	"faas-engine-go/internal/config"
+
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +52,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&serverAddr,
 		"server",
-		"http://localhost:8080",
+		config.ProxyURL(),
 		"Address of the runtime manager server",
 	)
 }

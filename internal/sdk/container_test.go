@@ -21,7 +21,7 @@ func setupDocker(t *testing.T) (context.Context, *DockerClient, func()) {
 		t.Fatalf("failed to init sdk: %v", err)
 	}
 
-	docker := NewDockerClient(cli)
+	docker := NewDockerClient(cli, ctx)
 
 	return ctx, docker, cancel
 }

@@ -2,40 +2,19 @@ package service
 
 import (
 	"database/sql"
+	"faas-engine-go/internal/core"
 	"faas-engine-go/internal/sqlite/models"
 	sqlstore "faas-engine-go/internal/sqlite/store"
 	"time"
 )
 
-type Store interface {
-	GetActiveFunction(name string) (*models.Function, error)
-	CreateInvocation(inv *models.Invocation) error
-	MarkInvocationRunning(invID string, containerID string) error
-	CompleteInvocation(
-		invID string,
-		status string,
-		exitCode int,
-		responsePayload []byte,
-		logs string,
-		startedAt time.Time,
-	) error
-	AcquireFreeContainer(functionID int) (*models.Container, error)
-	MarkContainerFree(containerID string) error
-	RemoveContainer(containerID string) error
-	CreateContainer(c *models.Container) error
-	GetContainersByFunction(functionID int) ([]models.Container, error)
-	ListFunctionVersions(name string) ([]models.Function, error)
-	DeleteFunction(name string) error
-	ListFunctions() ([]models.Function, error)
-}
-
 type realStore struct {
 	db *sql.DB
 }
 
-var _ Store = (*realStore)(nil)
+var _ core.Store = (*realStore)(nil)
 
-func NewStore(db *sql.DB) Store {
+func NewStore(db *sql.DB) core.Store {
 	return &realStore{db: db}
 }
 
@@ -70,8 +49,31 @@ func (s *realStore) CompleteInvocation(
 	)
 }
 
-func (s *realStore) AcquireFreeContainer(functionID int) (*models.Container, error) {
-	return sqlstore.AcquireFreeContainer(s.db, functionID)
+func (s *realStore) CompleteInvocationAndMarkFree(
+	invID string,
+	status string,
+	exitCode int,
+	responsePayload []byte,
+	logs string,
+	startedAt time.Time,
+	containerID string,
+	shouldMarkFree bool,
+) error {
+	return sqlstore.CompleteInvocationAndMarkFree(
+		s.db,
+		invID,
+		status,
+		exitCode,
+		responsePayload,
+		logs,
+		startedAt,
+		containerID,
+		shouldMarkFree,
+	)
+}
+
+func (s *realStore) AcquireFreeContainer(functionID string) (*models.Container, error) {
+	return sqlstore.GetFreeContainer(s.db, functionID)
 }
 
 func (s *realStore) MarkContainerFree(containerID string) error {
@@ -86,7 +88,7 @@ func (s *realStore) CreateContainer(c *models.Container) error {
 	return sqlstore.CreateContainer(s.db, c)
 }
 
-func (s *realStore) GetContainersByFunction(functionID int) ([]models.Container, error) {
+func (s *realStore) GetContainersByFunction(functionID string) ([]models.Container, error) {
 	return sqlstore.GetContainersByFunction(s.db, functionID)
 }
 
@@ -100,4 +102,8 @@ func (s *realStore) DeleteFunction(name string) error {
 
 func (s *realStore) ListFunctions() ([]models.Function, error) {
 	return sqlstore.ListFunctions(s.db)
+}
+
+func (s *realStore) GetInvocationLogs(functionID string, limit int) ([]models.Invocation, error) {
+	return sqlstore.GetInvocationLogsByFunction(s.db, functionID, limit)
 }

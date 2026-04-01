@@ -10,11 +10,11 @@ import (
 )
 
 type Function struct {
-	ID      int    `json:"ID"`
-	Name    string `json:"Name"`
-	Version string `json:"Version"`
-	Status  string `json:"Status"`
-	Runtime string `json:"Runtime"`
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+	Status  string `json:"status"`
+	Runtime string `json:"runtime"`
 }
 
 type ListResponse struct {

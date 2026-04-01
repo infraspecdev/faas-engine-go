@@ -55,9 +55,9 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 	}
 
 	var (
-		wg     sync.WaitGroup
-		mu     sync.Mutex
-		failed []string
+		wg         sync.WaitGroup
+		failedList []string
+		mu         sync.Mutex
 	)
 
 	for _, v := range versions {
@@ -75,9 +75,9 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 					return
 				}
 
-				mu.Lock()
-				failed = append(failed, ver)
-				mu.Unlock()
+				// If registry is unreachable or connection error, skip deletion from registry
+				// This allows deleting functions that are only deployed locally
+				slog.Warn("registry_unavailable_skipping_image_delete", "function", name, "version", ver, "error", err.Error())
 				return
 			}
 
@@ -86,21 +86,30 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 			})
 
 			if err != nil {
+				// Check if it's a 405 Method Not Allowed error (registry doesn't support DELETE)
+				if err.Error() == "delete failed: 405 Method Not Allowed" {
+					slog.Info("registry_delete_not_supported", "function", name, "version", ver, "note", "registry does not support DELETE operations")
+					return
+				}
+				slog.Warn("registry_image_delete_failed", "function", name, "version", ver, "error", err.Error())
+				// Track failed versions but continue with database deletion
 				mu.Lock()
-				failed = append(failed, ver)
+				failedList = append(failedList, ver)
 				mu.Unlock()
+				return
 			}
 		}(version)
 	}
 
 	wg.Wait()
 
-	if len(failed) > 0 {
-		return failed, fmt.Errorf("partial delete failure")
-	}
-
 	if err := s.store.DeleteFunction(name); err != nil {
 		return nil, fmt.Errorf("failed to delete function from db: %w", err)
+	}
+
+	// Return failed versions if any, but still consider it a successful deletion if database was cleaned
+	if len(failedList) > 0 {
+		return failedList, nil
 	}
 
 	return nil, nil
@@ -108,12 +117,17 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 
 func defaultRetry(attempts int, fn func() error) error {
 	var err error
+	baseBackoff := 100 * time.Millisecond // Start with 100ms backoff
 
 	for i := 0; i < attempts; i++ {
 		if err = fn(); err == nil {
 			return nil
 		}
-		time.Sleep(time.Duration(i+1) * config.RegistryDeleteTimeout)
+		if i < attempts-1 {
+			// Exponential backoff: 100ms, 200ms, 400ms, etc.
+			backoff := baseBackoff * time.Duration(1<<uint(i))
+			time.Sleep(backoff)
+		}
 	}
 
 	return err

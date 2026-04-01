@@ -3,8 +3,8 @@ package service
 import (
 	"database/sql"
 
+	"faas-engine-go/internal/core"
 	"faas-engine-go/internal/sqlite/models"
-	"faas-engine-go/internal/sqlite/store"
 )
 
 type LogEntry struct {
@@ -15,70 +15,63 @@ type LogEntry struct {
 }
 
 type LogService struct {
-	getLogs func(functionID int, limit int) ([]models.Invocation, error)
-
-	getActiveFunctionID  func(name string) (int, error)
-	getFunctionByVersion func(name, version string) (int, error)
+	store core.Store
 }
 
 func NewLogService(db *sql.DB) *LogService {
 	return &LogService{
-
-		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
-			return store.GetInvocationLogsByFunction(db, functionID, limit)
-		},
-
-		getActiveFunctionID: func(name string) (int, error) {
-			fn, err := store.GetActiveFunction(db, name)
-			if err != nil {
-				return 0, err
-			}
-			if fn == nil {
-				return 0, ErrFunctionNotFound
-			}
-			return fn.ID, nil
-		},
-
-		getFunctionByVersion: func(name, version string) (int, error) {
-			fn, err := store.GetFunctionByNameAndVersion(db, name, version)
-			if err != nil {
-				return 0, err
-			}
-			if fn == nil {
-				return 0, ErrFunctionNotFound
-			}
-			return fn.ID, nil
-		},
+		store: NewStore(db),
 	}
 }
 
 func (l *LogService) GetLogsByName(functionName string, limit int) ([]LogEntry, error) {
 
-	functionID, err := l.getActiveFunctionID(functionName)
+	functionID, err := l.store.GetActiveFunction(functionName)
 	if err != nil {
 		return nil, err
 	}
 
-	return l.GetLogs(functionID, limit)
+	if functionID == nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	invocations, err := l.store.GetInvocationLogs(functionID.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return l.convertInvocations(invocations), nil
 }
 
 func (l *LogService) GetLogsByNameAndVersion(functionName, version string, limit int) ([]LogEntry, error) {
 
-	functionID, err := l.getFunctionByVersion(functionName, version)
+	// Get function by name and version
+	functions, err := l.store.ListFunctionVersions(functionName)
 	if err != nil {
 		return nil, err
 	}
 
-	return l.GetLogs(functionID, limit)
+	var fn *models.Function
+	for i := range functions {
+		if functions[i].Version == version {
+			fn = &functions[i]
+			break
+		}
+	}
+
+	if fn == nil {
+		return nil, ErrFunctionNotFound
+	}
+
+	invocations, err := l.store.GetInvocationLogs(fn.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	return l.convertInvocations(invocations), nil
 }
 
-func (l *LogService) GetLogs(functionID int, limit int) ([]LogEntry, error) {
-
-	invocations, err := l.getLogs(functionID, limit)
-	if err != nil {
-		return nil, err
-	}
-
+func (l *LogService) convertInvocations(invocations []models.Invocation) []LogEntry {
 	var result []LogEntry
 
 	for _, inv := range invocations {
@@ -90,5 +83,5 @@ func (l *LogService) GetLogs(functionID int, limit int) ([]LogEntry, error) {
 		})
 	}
 
-	return result, nil
+	return result
 }

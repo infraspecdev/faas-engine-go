@@ -67,7 +67,14 @@ var scheduleCreateCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusCreated {
-			return fmt.Errorf("failed: %s", resp.Status)
+			// Parse error response to get detailed message
+			var errResp map[string]string
+			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+				if errMsg, ok := errResp["error"]; ok {
+					return fmt.Errorf("failed to create schedule: %s", errMsg)
+				}
+			}
+			return fmt.Errorf("failed to create schedule: %s", resp.Status)
 		}
 
 		fmt.Println("✅ schedule created successfully")
@@ -84,6 +91,11 @@ var scheduleListCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 
 		url := fmt.Sprintf("%s/schedules", serverAddr)
+
+		// Add optional query parameter for function filtering (server-side filtering)
+		if functionFilter != "" {
+			url = fmt.Sprintf("%s?function=%s", url, functionFilter)
+		}
 
 		resp, err := http.Get(url)
 		if err != nil {
@@ -113,22 +125,12 @@ var scheduleListCmd = &cobra.Command{
 
 		// Header
 		fmt.Println()
-		header.Printf("%-10s %-15s %-20s\n", "ID", "FUNCTION", "CRON")
+		header.Printf("%-37s %-15s %-20s\n", "ID", "FUNCTION", "CRON")
 		border.Println("----------------------------------------------------------")
 
 		for _, s := range schedules {
 
-			if functionFilter != "" && s.Functionname != functionFilter {
-				continue
-			}
-
-			// Short ID for better UX
-			shortID := s.ID
-			if len(shortID) > 8 {
-				shortID = shortID[:8]
-			}
-
-			idCol.Printf("%-10s ", shortID)
+			idCol.Printf("%-37s ", s.ID)
 			fnCol.Printf("%-15s ", s.Functionname)
 			cronCol.Printf("%-20s\n", s.Cron)
 		}
@@ -165,10 +167,17 @@ var scheduleDeleteCmd = &cobra.Command{
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed: %s", resp.Status)
+			// Parse error response to get detailed message
+			var errResp map[string]string
+			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+				if errMsg, ok := errResp["error"]; ok {
+					return fmt.Errorf("failed to delete schedule: %s", errMsg)
+				}
+			}
+			return fmt.Errorf("failed to delete schedule: %s", resp.Status)
 		}
 
-		fmt.Println("schedule deleted successfully")
+		fmt.Println("✅ schedule deleted successfully")
 		return nil
 	},
 }

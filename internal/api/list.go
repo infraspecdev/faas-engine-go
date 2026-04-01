@@ -15,6 +15,7 @@ type FunctionLister interface {
 }
 
 // ListFunctionsHandler returns a JSON list of available functions.
+// Returns HTTP 200 with GetFunctionsResponse containing all active functions.
 func ListFunctionsHandler(svc FunctionLister) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 

@@ -3,74 +3,71 @@ package service
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"faas-engine-go/internal/sqlite/models"
 )
 
-func TestGetLogs_Success(t *testing.T) {
-
-	logService := &LogService{
-		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
-			return []models.Invocation{
-				{
-					ID:         "inv1",
-					Status:     "success",
-					Logs:       "log1",
-					DurationMs: 100,
-				},
-				{
-					ID:         "inv2",
-					Status:     "failed",
-					Logs:       "log2",
-					DurationMs: 200,
-				},
-			}, nil
-		},
-	}
-
-	res, err := logService.GetLogs(1, 10)
-
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if len(res) != 2 {
-		t.Fatalf("expected 2 logs, got %d", len(res))
-	}
-
-	if res[0].ID != "inv1" || res[1].ID != "inv2" {
-		t.Fatal("unexpected log IDs")
-	}
+type mockStoreForLogs struct {
+	getActiveFunction    func(name string) (*models.Function, error)
+	listFunctionVersions func(name string) ([]models.Function, error)
+	getInvocationLogs    func(functionID string, limit int) ([]models.Invocation, error)
 }
 
-func TestGetLogs_Error(t *testing.T) {
-
-	logService := &LogService{
-		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
-			return nil, errors.New("db error")
-		},
+func (m *mockStoreForLogs) GetActiveFunction(name string) (*models.Function, error) {
+	if m.getActiveFunction != nil {
+		return m.getActiveFunction(name)
 	}
-
-	_, err := logService.GetLogs(1, 10)
-
-	if err == nil {
-		t.Fatal("expected error")
-	}
+	return nil, errors.New("not implemented")
 }
+
+func (m *mockStoreForLogs) ListFunctionVersions(name string) ([]models.Function, error) {
+	if m.listFunctionVersions != nil {
+		return m.listFunctionVersions(name)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockStoreForLogs) GetInvocationLogs(functionID string, limit int) ([]models.Invocation, error) {
+	if m.getInvocationLogs != nil {
+		return m.getInvocationLogs(functionID, limit)
+	}
+	return nil, errors.New("not implemented")
+}
+
+func (m *mockStoreForLogs) CreateInvocation(inv *models.Invocation) error                { return nil }
+func (m *mockStoreForLogs) MarkInvocationRunning(invID string, containerID string) error { return nil }
+func (m *mockStoreForLogs) CompleteInvocation(invID string, status string, exitCode int, responsePayload []byte, logs string, startedAt time.Time) error {
+	return nil
+}
+func (m *mockStoreForLogs) CompleteInvocationAndMarkFree(invID, status string, exitCode int, responsePayload []byte, logs string, startedAt time.Time, containerID string, shouldMarkFree bool) error {
+	return nil
+}
+func (m *mockStoreForLogs) AcquireFreeContainer(functionID string) (*models.Container, error) {
+	return nil, nil
+}
+func (m *mockStoreForLogs) MarkContainerFree(containerID string) error { return nil }
+func (m *mockStoreForLogs) RemoveContainer(containerID string) error   { return nil }
+func (m *mockStoreForLogs) CreateContainer(c *models.Container) error  { return nil }
+func (m *mockStoreForLogs) GetContainersByFunction(functionID string) ([]models.Container, error) {
+	return nil, nil
+}
+func (m *mockStoreForLogs) DeleteFunction(name string) error          { return nil }
+func (m *mockStoreForLogs) ListFunctions() ([]models.Function, error) { return nil, nil }
 
 func TestGetLogsByName_Success(t *testing.T) {
-
-	logService := &LogService{
-		getActiveFunctionID: func(name string) (int, error) {
-			return 1, nil
+	mock := &mockStoreForLogs{
+		getActiveFunction: func(name string) (*models.Function, error) {
+			return &models.Function{ID: "fn-1", Name: "test"}, nil
 		},
-		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
+		getInvocationLogs: func(functionID string, limit int) ([]models.Invocation, error) {
 			return []models.Invocation{
 				{ID: "inv1", Status: "success", Logs: "ok", DurationMs: 50},
 			}, nil
 		},
 	}
 
+	logService := &LogService{store: mock}
 	res, err := logService.GetLogsByName("test", 10)
 
 	if err != nil {
@@ -83,33 +80,35 @@ func TestGetLogsByName_Success(t *testing.T) {
 }
 
 func TestGetLogsByName_FunctionNotFound(t *testing.T) {
-
-	logService := &LogService{
-		getActiveFunctionID: func(name string) (int, error) {
-			return 0, errors.New("not found")
+	mock := &mockStoreForLogs{
+		getActiveFunction: func(name string) (*models.Function, error) {
+			return nil, nil
 		},
 	}
 
+	logService := &LogService{store: mock}
 	_, err := logService.GetLogsByName("test", 10)
 
-	if err == nil {
-		t.Fatal("expected error")
+	if err != ErrFunctionNotFound {
+		t.Fatalf("expected ErrFunctionNotFound, got %v", err)
 	}
 }
 
 func TestGetLogsByNameAndVersion_Success(t *testing.T) {
-
-	logService := &LogService{
-		getFunctionByVersion: func(name, version string) (int, error) {
-			return 2, nil
+	mock := &mockStoreForLogs{
+		listFunctionVersions: func(name string) ([]models.Function, error) {
+			return []models.Function{
+				{ID: "fn-2", Name: "test", Version: "v2"},
+			}, nil
 		},
-		getLogs: func(functionID int, limit int) ([]models.Invocation, error) {
+		getInvocationLogs: func(functionID string, limit int) ([]models.Invocation, error) {
 			return []models.Invocation{
 				{ID: "invX", Status: "success", Logs: "v2", DurationMs: 70},
 			}, nil
 		},
 	}
 
+	logService := &LogService{store: mock}
 	res, err := logService.GetLogsByNameAndVersion("test", "v2", 10)
 
 	if err != nil {
@@ -126,16 +125,16 @@ func TestGetLogsByNameAndVersion_Success(t *testing.T) {
 }
 
 func TestGetLogsByNameAndVersion_NotFound(t *testing.T) {
-
-	logService := &LogService{
-		getFunctionByVersion: func(name, version string) (int, error) {
-			return 0, errors.New("not found")
+	mock := &mockStoreForLogs{
+		listFunctionVersions: func(name string) ([]models.Function, error) {
+			return []models.Function{}, nil
 		},
 	}
 
+	logService := &LogService{store: mock}
 	_, err := logService.GetLogsByNameAndVersion("test", "v2", 10)
 
-	if err == nil {
-		t.Fatal("expected error")
+	if err != ErrFunctionNotFound {
+		t.Fatalf("expected ErrFunctionNotFound, got %v", err)
 	}
 }

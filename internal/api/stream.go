@@ -11,8 +11,8 @@ import (
 )
 
 type LogStreamer interface {
-	StreamFunctionLogs(ctx context.Context, functionID int, out chan<- string) error
-	GetFunctionID(name string) (int, error)
+	StreamFunctionLogs(ctx context.Context, functionName string, out chan<- string) error
+	GetFunctionID(name string) (string, error)
 }
 
 // LogStreamHandler handles HTTP requests for streaming function logs.
@@ -27,7 +27,7 @@ func LogStreamHandler(streamer LogStreamer) http.HandlerFunc {
 			return
 		}
 
-		functionID, err := streamer.GetFunctionID(functionName)
+		_, err := streamer.GetFunctionID(functionName)
 		if err != nil {
 			http.Error(w, "function not found", http.StatusNotFound)
 			return
@@ -46,7 +46,7 @@ func LogStreamHandler(streamer LogStreamer) http.HandlerFunc {
 		logChan := make(chan string, 100)
 
 		go func() {
-			err := streamer.StreamFunctionLogs(r.Context(), functionID, logChan)
+			err := streamer.StreamFunctionLogs(r.Context(), functionName, logChan)
 			if err != nil {
 				logChan <- fmt.Sprintf("error: %v", err)
 				close(logChan)

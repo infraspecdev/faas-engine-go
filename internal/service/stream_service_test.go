@@ -13,6 +13,7 @@ import (
 func TestStreamFunctionLogs_Success(t *testing.T) {
 
 	store := &fakeStore{
+		fn:        &models.Function{ID: "1"},
 		container: &models.Container{ID: "abc123"},
 	}
 
@@ -27,7 +28,7 @@ func TestStreamFunctionLogs_Success(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_ = service.StreamFunctionLogs(ctx, 1, out)
+		_ = service.StreamFunctionLogs(ctx, "1", out)
 	}()
 
 	time.Sleep(500 * time.Millisecond)
@@ -46,6 +47,7 @@ func TestStreamFunctionLogs_Success(t *testing.T) {
 func TestStreamFunctionLogs_NoRunningContainer(t *testing.T) {
 
 	store := &fakeStore{
+		fn:        &models.Function{ID: "1"},
 		container: &models.Container{ID: "abc123"},
 	}
 
@@ -59,7 +61,7 @@ func TestStreamFunctionLogs_NoRunningContainer(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_ = service.StreamFunctionLogs(ctx, 1, out)
+		_ = service.StreamFunctionLogs(ctx, "1", out)
 	}()
 
 	time.Sleep(300 * time.Millisecond)
@@ -73,6 +75,7 @@ func TestStreamFunctionLogs_NoRunningContainer(t *testing.T) {
 func TestStreamFunctionLogs_EmptyLogs(t *testing.T) {
 
 	store := &fakeStore{
+		fn:        &models.Function{ID: "1"},
 		container: &models.Container{ID: "abc123"},
 	}
 
@@ -87,7 +90,7 @@ func TestStreamFunctionLogs_EmptyLogs(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
-		_ = service.StreamFunctionLogs(ctx, 1, out)
+		_ = service.StreamFunctionLogs(ctx, "1", out)
 	}()
 
 	time.Sleep(300 * time.Millisecond)
@@ -101,7 +104,7 @@ func TestStreamFunctionLogs_EmptyLogs(t *testing.T) {
 func TestGetFunctionID_Success(t *testing.T) {
 
 	store := &fakeStore{
-		fn: &models.Function{ID: 42},
+		fn: &models.Function{ID: "42"},
 	}
 
 	service := NewLogStreamService(nil, store)
@@ -112,8 +115,8 @@ func TestGetFunctionID_Success(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if id != 42 {
-		t.Fatalf("expected 42, got %d", id)
+	if id != "42" {
+		t.Fatalf("expected 42, got %s", id)
 	}
 }
 

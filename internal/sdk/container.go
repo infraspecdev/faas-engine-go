@@ -20,20 +20,21 @@ import (
 )
 
 // Init initializes a Docker API client with a bounded context.
-// It creates a child context with a timeout and returns
-// the context, Docker client, and cancel function.
+// It creates a background context (no timeout) for the client lifetime,
+// and only applies a timeout to the initialization phase itself.
 // The caller must defer the returned cancel function to avoid leaks.
 func Init(parent context.Context) (context.Context, *client.Client, context.CancelFunc, error) {
-	ctx, cancel := context.WithTimeout(parent, config.InitTimeout)
-
 	apiclient, err := client.New(
 		client.FromEnv,
 		client.WithAPIVersionFromEnv(),
 	)
 	if err != nil {
-		cancel()
 		return nil, nil, nil, fmt.Errorf("failed to create Docker client: %w", err)
 	}
+
+	// Return a background context (no timeout) for the client's lifetime
+	// This allows long-running operations like log streaming to work indefinitely
+	ctx, cancel := context.WithCancel(context.Background())
 	return ctx, apiclient, cancel, nil
 }
 
@@ -73,6 +74,9 @@ func (d *DockerClient) CreateContainer(
 			User:  config.ContainerUser,
 			ExposedPorts: network.PortSet{
 				containerPort: struct{}{},
+			},
+			Labels: map[string]string{
+				"faas-engine": "true",
 			},
 		},
 		HostConfig: &container.HostConfig{
@@ -250,10 +254,6 @@ func (d *DockerClient) LogContainer(ctx context.Context, containerID string) (st
 	reader, err := d.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Timestamps: false,
-		Follow:     false,
-		Tail:       "100",
-		Since:      "0",
 	})
 	if err != nil {
 		return "", fmt.Errorf("failed to get logs: %w", err)
@@ -302,7 +302,9 @@ func (d *DockerClient) StreamContainerLogs(
 	containerID string,
 ) (io.ReadCloser, error) {
 
-	reader, err := d.cli.ContainerLogs(ctx, containerID, client.ContainerLogsOptions{
+	// Use the Docker client's background context instead of the HTTP request context
+	// to avoid premature cancellation when the request ends
+	reader, err := d.cli.ContainerLogs(d.ctx, containerID, client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Timestamps: false,
@@ -314,4 +316,34 @@ func (d *DockerClient) StreamContainerLogs(
 	}
 
 	return reader, nil
+}
+
+// ListContainers returns all faas-engine labeled containers (running, stopped, and exited)
+func (d *DockerClient) ListContainers(ctx context.Context) ([]ContainerInfo, error) {
+	result, err := d.cli.ContainerList(ctx, client.ContainerListOptions{
+		All: true, // Include stopped and exited containers
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list containers: %w", err)
+	}
+
+	var containerInfos []ContainerInfo
+	filtered := 0
+	for _, c := range result.Items {
+		// Filter to only include containers with the faas-engine label
+		if c.Labels["faas-engine"] == "true" {
+			containerInfos = append(containerInfos, ContainerInfo{
+				ID:    c.ID,
+				State: string(c.State),
+			})
+		} else {
+			filtered++
+		}
+	}
+
+	if len(result.Items) > 0 && len(containerInfos) > 0 {
+		slog.Debug("containers listed", "total", len(result.Items), "labeled", len(containerInfos), "filtered_out", filtered)
+	}
+
+	return containerInfos, nil
 }

@@ -121,8 +121,8 @@ func TestDeleteFunction_PartialFailure(t *testing.T) {
 
 	failed, err := svc.DeleteFunction("test")
 
-	if err == nil {
-		t.Fatal("expected error")
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
 	}
 
 	if len(failed) == 0 {

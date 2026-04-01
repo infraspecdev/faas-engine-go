@@ -67,17 +67,19 @@ func CreateContainer(db *sql.DB, c *models.Container) error {
 	) VALUES (?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := db.Exec(
-		query,
-		c.ID,
-		c.FunctionID,
-		c.Status,
-		c.HostPort,
-		c.LastUsedAt,
-		time.Now(),
-	)
-
-	return err
+	// Retry with exponential backoff for database lock scenarios
+	return RetryWithBackoff(func() error {
+		_, err := db.Exec(
+			query,
+			c.ID,
+			c.FunctionID,
+			c.Status,
+			c.HostPort,
+			c.LastUsedAt,
+			c.CreatedAt,
+		)
+		return err
+	}, 50*time.Millisecond, 5)
 }
 
 func GetContainerByID(db *sql.DB, id string) (*models.Container, error) {
@@ -94,11 +96,22 @@ func GetContainerByID(db *sql.DB, id string) (*models.Container, error) {
 	return c, err
 }
 
-func GetContainersByFunction(db *sql.DB, functionID int) ([]models.Container, error) {
+func GetContainersByFunction(db *sql.DB, functionID string) ([]models.Container, error) {
 
-	query := "SELECT " + containerColumns + " FROM containers WHERE function_id=?"
+	var query string
+	var rows *sql.Rows
+	var err error
 
-	rows, err := db.Query(query, functionID)
+	if functionID == "" {
+		// Get ALL containers when functionID is empty (used by container cleanup/spleen)
+		query = "SELECT " + containerColumns + " FROM containers"
+		rows, err = db.Query(query)
+	} else {
+		// Get containers for a specific function
+		query = "SELECT " + containerColumns + " FROM containers WHERE function_id=?"
+		rows, err = db.Query(query, functionID)
+	}
+	
 	if err != nil {
 		return nil, err
 	}
@@ -117,27 +130,56 @@ func GetContainersByFunction(db *sql.DB, functionID int) ([]models.Container, er
 	return containers, nil
 }
 
-func AcquireFreeContainer(db *sql.DB, functionID int) (*models.Container, error) {
+func GetFreeContainer(db *sql.DB, functionID string) (*models.Container, error) {
+	// Use IMMEDIATE transaction to acquire locks immediately and prevent race conditions
+	// when multiple goroutines try to acquire the same free container
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
 
-	query := `
-	UPDATE containers
-	SET status='busy', last_used=?
-	WHERE id = (
-		SELECT id FROM containers
-		WHERE function_id=? AND status='free'
-		ORDER BY last_used DESC
-		LIMIT 1
-	)
-	RETURNING ` + containerColumns
+	// First, find the free container
+	selectQuery := `
+	SELECT ` + containerColumns + `
+	FROM containers
+	WHERE function_id=? AND status='free'
+	ORDER BY last_used DESC
+	LIMIT 1
+	`
 
-	row := db.QueryRow(query, time.Now(), functionID)
-
+	row := tx.QueryRow(selectQuery, functionID)
 	c, err := scanContainerRow(row)
-	if err == sql.ErrNoRows {
-		return nil, nil
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, tx.Commit()
+		}
+		return nil, err
 	}
 
-	return c, err
+	// Update it to busy while still in the transaction
+	updateQuery := `
+	UPDATE containers
+	SET status='busy', last_used=?
+	WHERE id=?
+	`
+
+	now := time.Now()
+	_, err = tx.Exec(updateQuery, now, c.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Commit the transaction to release locks
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+
+	// Update the returned container to reflect the changes
+	c.Status = "busy"
+	c.LastUsedAt = now
+
+	return c, nil
 }
 
 func MarkContainerFree(db *sql.DB, id string) error {

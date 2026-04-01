@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"faas-engine-go/internal/api"
+	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/service"
 	"faas-engine-go/internal/sqlite"
@@ -11,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/joho/godotenv"
@@ -29,14 +29,14 @@ func main() {
 	}
 
 	// Initialize SDK
-	_, cli, cancel, err := sdk.Init(context.Background())
+	ctx, cli, cancel, err := sdk.Init(context.Background())
 	if err != nil {
 		slog.Error("failed to initialize sdk", "error", err)
 		os.Exit(1)
 	}
 	defer cancel()
 
-	docker := sdk.NewDockerClient(cli)
+	docker := sdk.NewDockerClient(cli, ctx)
 
 	// Initialize database (if needed)
 	db, err := sqlite.InitDB()
@@ -51,11 +51,11 @@ func main() {
 	}
 
 	// Start background container cleanup worker
-	service.ContainerSpleen(docker, db)
+	store := service.NewStore(db)
+	service.ContainerSpleen(docker, store)
 
 	// Setup router
 	r := mux.NewRouter()
-	store := service.NewStore(db)
 
 	deployService := service.NewDeployService(docker, db)
 	functionStore := api.NewFunctionStore(db)
@@ -93,7 +93,6 @@ func main() {
 
 	r.HandleFunc("/schedules/{functionName}", api.CreateScheduleHandler(scheduler)).Methods("POST")
 	r.HandleFunc("/schedules", api.ListSchedulesHandler()).Methods("GET")
-	r.HandleFunc("/schedules/{functionName}", api.ListScheduleByFunctionNameHandler(scheduler)).Methods("GET")
 	r.HandleFunc("/schedules/{id}", api.DeleteScheduleHandler(scheduler)).Methods("DELETE")
 	// Create server instance
 	srv := &http.Server{
@@ -116,16 +115,28 @@ func main() {
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 
 	<-quit
-	slog.Info("shutdown signal received")
+	slog.Info("shutdown signal received, initiating graceful shutdown")
 
+	// Phase 1: Stop scheduler (prevents new triggers)
 	scheduler.Stop()
-	// Create timeout context for graceful shutdown
-	ctx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer shutdownCancel()
+	slog.Info("scheduler stopped")
 
+	// Phase 2: Shutdown HTTP server (waits for in-flight requests)
+	ctx, shutdownCancel := context.WithTimeout(context.Background(), config.ServerShutdownTimeout)
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server forced to shutdown", "error", err)
 	} else {
-		slog.Info("server exited gracefully")
+		slog.Info("http server exited gracefully")
 	}
+	shutdownCancel()
+
+	// Phase 3: Graceful container cleanup (stop all running containers and remove exited ones)
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), config.GracefulShutdownTimeout)
+	defer cleanupCancel()
+
+	if err := service.GracefulShutdown(cleanupCtx, docker, store); err != nil {
+		slog.Error("container cleanup failed", "error", err)
+	}
+
+	slog.Info("graceful shutdown completed")
 }

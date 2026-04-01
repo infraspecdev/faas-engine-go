@@ -10,16 +10,17 @@ import (
 	"sync"
 	"time"
 
+	"faas-engine-go/internal/core"
 	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite/models"
 )
 
 type LogStreamService struct {
 	containerClient sdk.ContainerClient
-	store           Store
+	store           core.Store
 }
 
-func NewLogStreamService(c sdk.ContainerClient, s Store) *LogStreamService {
+func NewLogStreamService(c sdk.ContainerClient, s core.Store) *LogStreamService {
 	return &LogStreamService{
 		containerClient: c,
 		store:           s,
@@ -28,9 +29,20 @@ func NewLogStreamService(c sdk.ContainerClient, s Store) *LogStreamService {
 
 func (s *LogStreamService) StreamFunctionLogs(
 	ctx context.Context,
-	functionID int,
+	functionName string,
 	out chan<- string,
 ) error {
+
+	fn, err := s.store.GetActiveFunction(functionName)
+	if err != nil {
+		out <- fmt.Sprintf("error: %v", err)
+		return err
+	}
+
+	if fn == nil {
+		out <- "error: function not found"
+		return ErrFunctionNotFound
+	}
 
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
@@ -44,7 +56,7 @@ func (s *LogStreamService) StreamFunctionLogs(
 			return nil
 
 		case <-ticker.C:
-			containers, err := s.store.GetContainersByFunction(functionID)
+			containers, err := s.store.GetContainersByFunction(fn.ID)
 			if err != nil {
 				out <- fmt.Sprintf("error: %v", err)
 				continue
@@ -170,14 +182,14 @@ func (s *LogStreamService) streamSingleContainer(
 	}
 }
 
-func (s *LogStreamService) GetFunctionID(name string) (int, error) {
+func (s *LogStreamService) GetFunctionID(name string) (string, error) {
 	fn, err := s.store.GetActiveFunction(name)
 	if err != nil {
-		return 0, err
+		return "", err
 	}
 
 	if fn == nil {
-		return 0, ErrFunctionNotFound
+		return "", ErrFunctionNotFound
 	}
 
 	return fn.ID, nil

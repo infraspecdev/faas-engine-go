@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"faas-engine-go/internal/config"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -39,9 +41,13 @@ func InitDB() (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
+	db.Exec("PRAGMA journal_mode = WAL;")
+	db.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", config.SQLiteBusyTimeout))
 
-	fmt.Println("Using DB:", dbURL)
-
+	// Optimize for concurrent writes
+	db.SetMaxOpenConns(config.MaxOpenConns)
+	db.SetMaxIdleConns(config.MaxIdleConns)
+	db.SetConnMaxLifetime(0) // No lifetime limit (SQLite doesn't need it)
 	return db, nil
 }
 
@@ -59,7 +65,7 @@ func InitTables() error {
 
 		//  FUNCTIONS
 		`CREATE TABLE IF NOT EXISTS functions (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id TEXT PRIMARY KEY,
 			name TEXT,
 			version TEXT,
 			package_checksum TEXT,
@@ -74,7 +80,7 @@ func InitTables() error {
 		//  CONTAINERS
 		`CREATE TABLE IF NOT EXISTS containers (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER,
+			function_id TEXT,
 			status TEXT,
 			host_port TEXT,
 			last_used TIMESTAMP,
@@ -85,7 +91,7 @@ func InitTables() error {
 		//  INVOCATIONS
 		`CREATE TABLE IF NOT EXISTS invocations (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER,
+			function_id TEXT,
 			container_id TEXT,
 			trigger_type TEXT,
 			status TEXT,
@@ -101,7 +107,7 @@ func InitTables() error {
 		//  SCHEDULES
 		`CREATE TABLE IF NOT EXISTS schedules (
 			id TEXT PRIMARY KEY,
-			function_id INTEGER NOT NULL,
+			function_id TEXT NOT NULL,
 			cron_expr TEXT NOT NULL,
 			payload TEXT, -- changed from BLOB → TEXT
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,

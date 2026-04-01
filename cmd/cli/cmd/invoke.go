@@ -6,7 +6,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
+
+	"faas-engine-go/internal/config"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -35,7 +36,7 @@ var invokeCmd = &cobra.Command{
 		req.Header.Set("Content-Type", "application/json")
 
 		client := &http.Client{
-			Timeout: 15 * time.Second,
+			Timeout: config.CLIInvokeTimeout,
 		}
 
 		resp, err := client.Do(req)

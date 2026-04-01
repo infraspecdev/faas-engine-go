@@ -12,15 +12,15 @@ import (
 )
 
 type mockStreamer struct {
-	getIDFn  func(name string) (int, error)
-	streamFn func(ctx context.Context, id int, out chan<- string) error
+	getIDFn  func(name string) (string, error)
+	streamFn func(ctx context.Context, id string, out chan<- string) error
 }
 
-func (m *mockStreamer) GetFunctionID(name string) (int, error) {
+func (m *mockStreamer) GetFunctionID(name string) (string, error) {
 	return m.getIDFn(name)
 }
 
-func (m *mockStreamer) StreamFunctionLogs(ctx context.Context, id int, out chan<- string) error {
+func (m *mockStreamer) StreamFunctionLogs(ctx context.Context, id string, out chan<- string) error {
 	return m.streamFn(ctx, id, out)
 }
 
@@ -34,10 +34,10 @@ func newStreamRequest(name string) *http.Request {
 func TestLogStreamHandler_Success(t *testing.T) {
 
 	mock := &mockStreamer{
-		getIDFn: func(name string) (int, error) {
-			return 1, nil
+		getIDFn: func(name string) (string, error) {
+			return "1", nil
 		},
-		streamFn: func(ctx context.Context, id int, out chan<- string) error {
+		streamFn: func(ctx context.Context, id string, out chan<- string) error {
 			out <- "log1"
 			out <- "log2"
 			close(out)
@@ -62,8 +62,8 @@ func TestLogStreamHandler_Success(t *testing.T) {
 func TestLogStreamHandler_FunctionNotFound(t *testing.T) {
 
 	mock := &mockStreamer{
-		getIDFn: func(name string) (int, error) {
-			return 0, errors.New("not found")
+		getIDFn: func(name string) (string, error) {
+			return "", errors.New("not found")
 		},
 	}
 
@@ -102,10 +102,10 @@ func TestLogStreamHandler_MissingName(t *testing.T) {
 func TestLogStreamHandler_StreamError(t *testing.T) {
 
 	mock := &mockStreamer{
-		getIDFn: func(name string) (int, error) {
-			return 1, nil
+		getIDFn: func(name string) (string, error) {
+			return "1", nil
 		},
-		streamFn: func(ctx context.Context, id int, out chan<- string) error {
+		streamFn: func(ctx context.Context, id string, out chan<- string) error {
 			return errors.New("stream failed")
 		},
 	}

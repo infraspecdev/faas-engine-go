@@ -3,14 +3,14 @@ package models
 import "time"
 
 type Function struct {
-	ID              int
-	Name            string
-	Version         string
-	PackageChecksum string
-	Image           string
-	Runtime         string
-	ScheduleCron    string
-	Endpoint        string // great.localhost
-	Status          string
-	CreatedAt       time.Time
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Version         string    `json:"version"`
+	PackageChecksum string    `json:"package_checksum"`
+	Image           string    `json:"image"`
+	Runtime         string    `json:"runtime"`
+	ScheduleCron    string    `json:"schedule_cron"`
+	Endpoint        string    `json:"endpoint"`
+	Status          string    `json:"status"`
+	CreatedAt       time.Time `json:"created_at"`
 }

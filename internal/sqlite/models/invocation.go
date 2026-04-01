@@ -7,7 +7,7 @@ import (
 
 type Invocation struct {
 	ID              string
-	FunctionID      int
+	FunctionID      string
 	ContainerID     string
 	TriggerType     string
 	Status          string

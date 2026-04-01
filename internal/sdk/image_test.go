@@ -39,7 +39,7 @@ func TestMain(m *testing.M) {
 
 	// initialize docker once
 	testCtx, testCli, testCancel = setupDockerGlobal()
-	testDocker = NewDockerClient(testCli)
+	testDocker = NewDockerClient(testCli, testCtx)
 	defer testCancel()
 
 	// verify docker engine

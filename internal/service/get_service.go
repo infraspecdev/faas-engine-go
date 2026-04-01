@@ -1,16 +1,19 @@
 package service
 
-import "faas-engine-go/internal/sqlite/models"
+import (
+	"faas-engine-go/internal/core"
+	"faas-engine-go/internal/sqlite/models"
+)
 
 type FunctionLister interface {
 	ListFunctions() ([]models.Function, error)
 }
 
 type functionListService struct {
-	store Store
+	store core.Store
 }
 
-func NewListService(s Store) FunctionLister {
+func NewListService(s core.Store) FunctionLister {
 	return &functionListService{store: s}
 }
 

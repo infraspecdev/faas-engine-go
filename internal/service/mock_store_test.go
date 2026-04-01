@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite/models"
 	"io"
 	"strings"
@@ -46,7 +47,21 @@ func (f *fakeStore) CompleteInvocation(
 	return nil
 }
 
-func (f *fakeStore) AcquireFreeContainer(functionID int) (*models.Container, error) {
+func (f *fakeStore) CompleteInvocationAndMarkFree(
+	invID string,
+	status string,
+	exitCode int,
+	responsePayload []byte,
+	logs string,
+	startedAt time.Time,
+	containerID string,
+	shouldMarkFree bool,
+) error {
+	f.markedFree = true
+	return nil
+}
+
+func (f *fakeStore) AcquireFreeContainer(functionID string) (*models.Container, error) {
 	return f.container, nil
 }
 
@@ -68,8 +83,11 @@ func (f *fakeStore) StreamContainerLogs(ctx context.Context, containerID string)
 	return nil, nil
 }
 
-// GetContainersByFunction(int) ([]models.Container, error)
-func (f *fakeStore) GetContainersByFunction(functionID int) ([]models.Container, error) {
+// GetContainersByFunction(string) ([]models.Container, error)
+func (f *fakeStore) GetContainersByFunction(functionID string) ([]models.Container, error) {
+	if f.container == nil {
+		return []models.Container{}, nil
+	}
 	return []models.Container{*f.container}, nil
 }
 
@@ -84,6 +102,10 @@ func (f *fakeStore) ListFunctions() ([]models.Function, error) {
 
 func (f *fakeStore) DeleteFunction(name string) error {
 	return nil
+}
+
+func (f *fakeStore) GetInvocationLogs(functionID string, limit int) ([]models.Invocation, error) {
+	return []models.Invocation{}, nil
 }
 
 type fakeContainerClient struct {
@@ -149,10 +171,15 @@ func (f *fakeContainerClient) InspectContainer(ctx context.Context, containerID 
 				Ports: portMap,
 			},
 			State: &container.State{
+				Running: true, // 🔧 FIX: Must set Running to true
 				Health: &container.Health{
 					Status: container.HealthStatus(health),
 				},
 			},
 		},
 	}, nil
+}
+
+func (f *fakeContainerClient) ListContainers(ctx context.Context) ([]sdk.ContainerInfo, error) {
+	return []sdk.ContainerInfo{}, nil
 }

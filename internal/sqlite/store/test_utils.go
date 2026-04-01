@@ -3,6 +3,7 @@ package store
 import (
 	"database/sql"
 	"testing"
+	"time"
 
 	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
@@ -29,8 +30,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func createTestFunction(db *sql.DB, name, version string) {
-	_ = CreateFunction(db, &models.Function{
+// 🔹 helper to avoid NULL issues everywhere
+func createTestFunction(db *sql.DB, name, version string) string {
+	fn := &models.Function{
 		Name:            name,
 		Version:         version,
 		PackageChecksum: "chk",
@@ -39,5 +41,10 @@ func createTestFunction(db *sql.DB, name, version string) {
 		ScheduleCron:    "",
 		Endpoint:        "/test",
 		Status:          "active",
-	})
+		CreatedAt:       time.Now(),
+	}
+	_ = CreateFunction(db, fn)
+	// Small delay to ensure different timestamps for subsequent calls
+	time.Sleep(1 * time.Millisecond)
+	return fn.ID
 }

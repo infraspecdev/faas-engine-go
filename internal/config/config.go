@@ -31,3 +31,21 @@ func RegistryUsername() string {
 func RegistryPassword() string {
 	return os.Getenv("FAAS_REGISTRY_PASSWORD")
 }
+
+// RuntimeURL returns the configured runtime manager URL.
+// It checks the RUNTIME_URL environment variable and defaults to "http://localhost:8080" if not set.
+func RuntimeURL() string {
+	url := os.Getenv("RUNTIME_URL")
+	if url == "" {
+		return "http://localhost:8080"
+	}
+	return url
+}
+
+func ProxyURL() string {
+	url := os.Getenv("PROXY_URL")
+	if url == "" {
+		return "http://localhost:80"
+	}
+	return url
+}
