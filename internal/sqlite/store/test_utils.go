@@ -16,11 +16,9 @@ func setupTestDB(t *testing.T) *sql.DB {
 		t.Fatalf("failed to open db: %v", err)
 	}
 
-	oldDB := sqlite.DB
-	sqlite.DB = db
+	sqlite.SetDB(db)
 
 	t.Cleanup(func() {
-		sqlite.DB = oldDB
 		db.Close()
 	})
 
@@ -31,7 +29,6 @@ func setupTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-// 🔹 helper to avoid NULL issues everywhere
 func createTestFunction(db *sql.DB, name, version string) {
 	_ = CreateFunction(db, &models.Function{
 		Name:            name,

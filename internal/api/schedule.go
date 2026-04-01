@@ -2,10 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"net/http"
+
 	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	"faas-engine-go/internal/sqlite/store"
-	"net/http"
 
 	"github.com/gorilla/mux"
 )
@@ -32,9 +33,7 @@ func writeError(w http.ResponseWriter, status int, msg string) {
 func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		vars := mux.Vars(r)
-		functionName := vars["functionName"]
-
+		functionName := mux.Vars(r)["functionName"]
 		if functionName == "" {
 			writeError(w, http.StatusBadRequest, "functionName is required")
 			return
@@ -55,7 +54,9 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 			return
 		}
 
-		fn, err := store.GetActiveFunction(sqlite.DB, functionName)
+		db := sqlite.GetDB()
+
+		fn, err := store.GetActiveFunction(db, functionName)
 		if err != nil || fn == nil {
 			writeError(w, http.StatusBadRequest, "function not found or inactive")
 			return
@@ -72,8 +73,7 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 			return
 		}
 
-		if err := store.CreateSchedule(sqlite.DB, &s); err != nil {
-			// rollback scheduler if DB fails
+		if err := store.CreateSchedule(db, &s); err != nil {
 			scheduler.RemoveSchedule(s.ID)
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -81,6 +81,7 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
+
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"message": "created",
 			"data":    s,
@@ -91,22 +92,21 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 func DeleteScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		vars := mux.Vars(r)
-		id := vars["id"]
-
+		id := mux.Vars(r)["id"]
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "schedule id required")
 			return
 		}
 
-		if err := store.DeleteSchedule(sqlite.DB, id); err != nil {
+		db := sqlite.GetDB()
+
+		if err := store.DeleteSchedule(db, id); err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
 		scheduler.RemoveSchedule(id)
 
-		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "deleted",
@@ -117,7 +117,9 @@ func DeleteScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 func ListSchedulesHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		schedules, err := store.ListSchedules(sqlite.DB)
+		db := sqlite.GetDB()
+
+		schedules, err := store.ListSchedules(db)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
@@ -140,15 +142,15 @@ func ListSchedulesHandler() http.HandlerFunc {
 func ListScheduleByFunctionNameHandler(scheduler Scheduler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		vars := mux.Vars(r)
-		functionName := vars["functionName"]
-
+		functionName := mux.Vars(r)["functionName"]
 		if functionName == "" {
 			writeError(w, http.StatusBadRequest, "functionName is required")
 			return
 		}
 
-		schedules, err := store.ListSchedulesByFunctionName(sqlite.DB, functionName)
+		db := sqlite.GetDB()
+
+		schedules, err := store.ListSchedulesByFunctionName(db, functionName)
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return

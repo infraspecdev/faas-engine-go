@@ -22,7 +22,7 @@ const (
 
 // delete function related constants
 const (
-	RegistryDeleteTimeout = 200 * time.Second
+	RegistryDeleteTimeout = 2 * time.Second
 	RegistryDeleteRetries = 3
 )
 

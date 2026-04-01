@@ -42,7 +42,7 @@ func setupTestDB(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	sqlite.DB = db
+	sqlite.SetDB(db)
 
 	_, err = db.Exec(`
 	CREATE TABLE functions (

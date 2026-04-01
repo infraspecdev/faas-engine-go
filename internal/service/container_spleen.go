@@ -2,15 +2,15 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"faas-engine-go/internal/config"
 	"faas-engine-go/internal/sdk"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/store"
 	"log/slog"
 	"time"
 )
 
-func ContainerSpleen(containerClient sdk.ContainerClient) {
+func ContainerSpleen(containerClient sdk.ContainerClient, db *sql.DB) {
 
 	ticker := time.NewTicker(10 * time.Second)
 
@@ -19,6 +19,7 @@ func ContainerSpleen(containerClient sdk.ContainerClient) {
 		for range ticker.C {
 
 			store.CleanupIdleContainers(
+				db,
 				config.ContainerIdleTimeout,
 				func(containerID string) {
 
@@ -35,28 +36,16 @@ func ContainerSpleen(containerClient sdk.ContainerClient) {
 					)
 
 					if err := containerClient.StopContainer(ctx, containerID); err != nil {
-						slog.Error(
-							"container_stop_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+						slog.Error("container_stop_failed", "container_id", containerID, "error", err)
 					}
 
 					if err := containerClient.DeleteContainer(ctx, containerID); err != nil {
-						slog.Error(
-							"container_delete_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+						slog.Error("container_delete_failed", "container_id", containerID, "error", err)
 						return
 					}
 
-					if err := store.RemoveContainer(sqlite.DB, containerID); err != nil {
-						slog.Error(
-							"db_remove_failed",
-							"container_id", containerID,
-							"error", err,
-						)
+					if err := store.RemoveContainer(db, containerID); err != nil {
+						slog.Error("db_remove_failed", "container_id", containerID, "error", err)
 					}
 
 					slog.Info(

@@ -38,11 +38,9 @@ func main() {
 
 	docker := sdk.NewDockerClient(cli)
 
-	// Start background container cleanup worker
-	service.ContainerSpleen(docker)
-
 	// Initialize database (if needed)
-	if err := sqlite.InitDB(); err != nil {
+	db, err := sqlite.InitDB()
+	if err != nil {
 		slog.Error("failed to initialize database", "error", err)
 		os.Exit(1)
 	}
@@ -52,15 +50,19 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Start background container cleanup worker
+	service.ContainerSpleen(docker, db)
+
 	// Setup router
 	r := mux.NewRouter()
+	store := service.NewStore(db)
 
-	realDeployer := service.NewDeployer(docker)
-	realStore := api.NewFunctionStore()
+	deployService := service.NewDeployService(docker, db)
+	functionStore := api.NewFunctionStore(db)
 
-	invokeInvoker := service.NewFunctionInvoker(docker, docker)
+	invokeService := service.NewInvokeService(docker, docker, store)
 
-	scheduler := service.NewSchedulerService(invokeInvoker)
+	scheduler := service.NewSchedulerService(invokeService)
 
 	if err := scheduler.LoadSchedules(); err != nil {
 		slog.Error("failed to load schedules", "error", err)
@@ -69,12 +71,25 @@ func main() {
 
 	scheduler.Start()
 
-	r.HandleFunc("/health", api.HealthHandler).Methods("GET")
-	r.HandleFunc("/greet", api.GreetHandler).Methods("GET")
-	r.HandleFunc("/functions", api.DeployHandler(realDeployer, realStore)).Methods("POST")
-	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeInvoker)).Methods("POST")
-	r.HandleFunc("/functions", api.GetFunctionsHandler).Methods("GET")
-	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler).Methods("DELETE")
+	logService := service.NewLogService(db)
+	functionVersionService := service.NewFunctionVersionService(store)
+
+	logStreamService := service.NewLogStreamService(docker, store)
+
+	registryClient := &service.HTTPRegistryClient{}
+	deleteService := service.NewFunctionDeleteService(store, registryClient)
+
+	listService := service.NewListService(store)
+
+	r.HandleFunc("/functions", api.ListFunctionsHandler(listService)).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/logs", api.LogHandler(logService)).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/logs/stream", api.LogStreamHandler(logStreamService)).Methods("GET")
+	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler(functionVersionService)).Methods("GET")
+
+	r.HandleFunc("/functions", api.DeployHandler(deployService, functionStore)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeService)).Methods("POST")
+
+	r.HandleFunc("/functions/{functionName}", api.DeleteFunctionHandler(deleteService)).Methods("DELETE")
 
 	r.HandleFunc("/schedules/{functionName}", api.CreateScheduleHandler(scheduler)).Methods("POST")
 	r.HandleFunc("/schedules", api.ListSchedulesHandler()).Methods("GET")

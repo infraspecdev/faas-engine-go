@@ -21,3 +21,13 @@ func Registry() string {
 func ImageRef(namespace, name, tag string) string {
 	return fmt.Sprintf("%s/%s/%s:%s", Registry(), namespace, name, tag)
 }
+
+// RegistryUsername returns the configured registry username, if any.
+func RegistryUsername() string {
+	return os.Getenv("FAAS_REGISTRY_USERNAME")
+}
+
+// RegistryPassword returns the configured registry password, if any.
+func RegistryPassword() string {
+	return os.Getenv("FAAS_REGISTRY_PASSWORD")
+}

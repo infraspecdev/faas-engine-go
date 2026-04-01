@@ -1,6 +1,3 @@
-/*
-Copyright © 2026 NAME HERE <EMAIL ADDRESS>
-*/
 package cmd
 
 import (
@@ -11,26 +8,27 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
-// invokeCmd represents the invoke command
 var invokeCmd = &cobra.Command{
-	Use:   "invoke",
+	Use:   "invoke <function-name>",
 	Short: "invoke a function in the runtime",
-	Long: `Invoke command allows you to execute a deployed function in the runtime manager.
-	Example usage:
-	lambda invoke --name my-function
-	`,
-	// Args: cobra.ExactArgs(1),
+	Args:  cobra.ExactArgs(1),
+
 	RunE: func(cmd *cobra.Command, args []string) error {
+
+		functionName := strings.TrimSpace(args[0])
 		if functionName == "" {
 			return fmt.Errorf("function name is required")
 		}
+
 		url := fmt.Sprintf("%s/functions/%s/invoke", serverAddr, functionName)
 
 		req, err := http.NewRequest("POST", url, strings.NewReader(data))
 		if err != nil {
+			color.Red("Invoke failed")
 			return err
 		}
 
@@ -42,6 +40,7 @@ var invokeCmd = &cobra.Command{
 
 		resp, err := client.Do(req)
 		if err != nil {
+			color.Red("Invoke failed")
 			return err
 		}
 		defer func() {
@@ -52,11 +51,20 @@ var invokeCmd = &cobra.Command{
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
+			color.Red("Invoke failed")
 			return err
 		}
 
+		if resp.StatusCode == http.StatusNotFound ||
+			strings.Contains(strings.ToLower(string(body)), "function not found") {
+
+			color.Yellow("Function not found")
+			return nil
+		}
+
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("invoke failed: %s", string(body))
+			color.Red("Invoke failed")
+			return fmt.Errorf("%s", string(body))
 		}
 
 		fmt.Println(string(body))
@@ -66,23 +74,6 @@ var invokeCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(invokeCmd)
-	// Here you will define your flags and configuration settings.
 
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// invokeCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// invokeCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-	invokeCmd.Flags().StringVar(&functionName, "name", "", "Name of the function to invoke")
-	invokeCmd.Flags().StringVar(&data, "data", "", "Data to pass to the function as input")
-
-	if err := invokeCmd.MarkFlagRequired("name"); err != nil {
-		log.Fatalf("failed to mark 'name' flag as required: %v", err)
-	}
-
-	if err := invokeCmd.MarkFlagRequired("data"); err != nil {
-		log.Fatalf("failed to mark 'data' flag as required: %v", err)
-	}
+	invokeCmd.Flags().StringVar(&data, "data", "", "JSON data to pass to the function")
 }

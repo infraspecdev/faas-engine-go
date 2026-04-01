@@ -182,10 +182,6 @@ func GetNextVersion(db *sql.DB, name string) (string, error) {
 	return fmt.Sprintf("v%d", v+1), nil
 }
 
-// -----------------------------
-// 🔹 UPDATE
-// -----------------------------
-
 func DeactivateFunctions(db *sql.DB, name string) error {
 
 	query := `
@@ -197,10 +193,6 @@ func DeactivateFunctions(db *sql.DB, name string) error {
 	_, err := db.Exec(query, name)
 	return err
 }
-
-// -----------------------------
-// 🔹 LIST
-// -----------------------------
 
 func ListFunctions(db *sql.DB) ([]models.Function, error) {
 
@@ -271,6 +263,25 @@ func GetFunctionByID(db *sql.DB, id int) (*models.Function, error) {
 	query := "SELECT " + functionColumns + " FROM functions WHERE id=?"
 
 	row := db.QueryRow(query, id)
+
+	fn, err := scanFunctionRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+
+	return fn, err
+}
+
+func GetFunctionByNameAndVersion(db *sql.DB, name, version string) (*models.Function, error) {
+
+	query := `
+	SELECT ` + functionColumns + `
+	FROM functions
+	WHERE name = ? AND version = ?
+	LIMIT 1
+	`
+
+	row := db.QueryRow(query, name, version)
 
 	fn, err := scanFunctionRow(row)
 	if err == sql.ErrNoRows {

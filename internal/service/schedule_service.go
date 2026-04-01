@@ -11,10 +11,6 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-type FunctionStore interface {
-	GetFunctionByID(id int) (*models.Function, error)
-}
-
 type SchedulerService struct {
 	cron      *cron.Cron
 	invoker   core.Invoker
@@ -46,7 +42,11 @@ func (s *SchedulerService) Stop() {
 // ---------- LOAD FROM DB ----------
 func (s *SchedulerService) LoadSchedules() error {
 
-	schedules, err := store.ListSchedules(sqlite.DB)
+	db, err := sqlite.InitDB()
+	if err != nil {
+		return err
+	}
+	schedules, err := store.ListSchedules(db)
 	if err != nil {
 		return err
 	}
@@ -79,8 +79,14 @@ func (s *SchedulerService) RegisterSchedule(sch models.Schedule) error {
 
 		ctx := context.Background()
 
+		db, err := sqlite.InitDB()
+		if err != nil {
+			slog.Error("db_init_failed", "error", err)
+			return
+		}
+
 		// fetch latest function (safe)
-		fn, err := store.GetFunctionByID(sqlite.DB, sch.FunctionID)
+		fn, err := store.GetFunctionByID(db, sch.FunctionID)
 		if err != nil || fn == nil {
 			slog.Error("function_not_found",
 				"function_id", sch.FunctionID,

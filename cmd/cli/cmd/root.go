@@ -12,7 +12,6 @@ import (
 
 var (
 	serverAddr   string
-	filePath     string
 	functionName string
 	data         string
 	runtimeName  string

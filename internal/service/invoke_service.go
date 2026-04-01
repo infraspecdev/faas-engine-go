@@ -3,14 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"faas-engine-go/internal/config"
-	"faas-engine-go/internal/sdk"
-	"faas-engine-go/internal/sqlite"
-	"faas-engine-go/internal/sqlite/models"
-	"faas-engine-go/internal/sqlite/store"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"faas-engine-go/internal/config"
+	"faas-engine-go/internal/sdk"
+	"faas-engine-go/internal/sqlite/models"
 
 	"github.com/moby/moby/api/types/network"
 )
@@ -18,22 +17,25 @@ import (
 type FunctionInvoker struct {
 	containerClient sdk.ContainerClient
 	imageClient     sdk.ImageClient
-	invokeFunc      func(ctx context.Context, hostPort string, payload []byte) (map[string]any, error)
+	store           Store
 }
 
-func NewFunctionInvoker(c sdk.ContainerClient, i sdk.ImageClient) *FunctionInvoker {
+func NewInvokeService(c sdk.ContainerClient, i sdk.ImageClient, s Store) *FunctionInvoker {
 	return &FunctionInvoker{
 		containerClient: c,
 		imageClient:     i,
-		invokeFunc:      sdk.InvokeContainer,
+		store:           s,
 	}
 }
 
 func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, payload []byte, triggerType string) (any, error) {
 
-	fn, err := store.GetActiveFunction(sqlite.DB, functionName)
-	if err != nil || fn == nil {
-		return nil, fmt.Errorf("function not found")
+	fn, err := f.store.GetActiveFunction(functionName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch function: %w", err)
+	}
+	if fn == nil {
+		return nil, ErrFunctionNotFound
 	}
 
 	inv := &models.Invocation{
@@ -44,8 +46,8 @@ func (f *FunctionInvoker) Invoke(ctx context.Context, functionName string, paylo
 		StartedAt:      time.Now(),
 	}
 
-	if err := store.CreateInvocation(sqlite.DB, inv); err != nil {
-		return nil, err
+	if err := f.store.CreateInvocation(inv); err != nil {
+		return nil, fmt.Errorf("failed to create invocation: %w", err)
 	}
 
 	if res, ok, err := f.tryReuseWithInvocation(ctx, fn, payload, inv); ok {
@@ -62,37 +64,46 @@ func (f *FunctionInvoker) tryReuseWithInvocation(
 	inv *models.Invocation,
 ) (any, bool, error) {
 
-	container, err := store.GetFreeContainer(sqlite.DB, fn.ID)
+	container, err := f.store.AcquireFreeContainer(fn.ID)
 	if err != nil {
 		return nil, false, err
 	}
+
 	if container == nil {
+		slog.Warn("no free container found", "function", fn.Name)
 		return nil, false, nil
 	}
 
-	inspect, err := f.containerClient.InspectContainer(ctx, container.ID)
-	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
-		slog.Warn("dead_container_detected", "id", container.ID)
+	if err := f.store.MarkInvocationRunning(inv.ID, container.ID); err != nil {
+		slog.Error("mark invocation running failed", "error", err)
+	}
 
-		_ = f.containerClient.DeleteContainer(ctx, container.ID)
-		_ = store.RemoveContainer(sqlite.DB, container.ID)
+	slog.Info(
+		"container_lifecycle",
+		"container_id", container.ID,
+		"function", fn.Name,
+		"stage", "reusing",
+	)
 
+	res, err := f.containerClient.InvokeContainer(ctx, container.HostPort, payload)
+	if err != nil {
+		if delErr := f.containerClient.DeleteContainer(ctx, container.ID); delErr != nil {
+			slog.Warn("failed to delete container", "error", delErr)
+		}
+		if rmErr := f.store.RemoveContainer(container.ID); rmErr != nil {
+			slog.Warn("failed to remove container from db", "error", rmErr)
+		}
+
+		f.completeInvocation(inv, container.ID, nil, err)
 		return nil, false, nil
 	}
 
-	logger := slog.With("container_id", container.ID, "function", fn.Name)
-	logger.Info("container_lifecycle", "stage", "reusing")
+	if err := f.store.MarkContainerFree(container.ID); err != nil {
+		slog.Error("mark container free failed", "error", err)
+	}
 
-	store.MarkContainerBusy(sqlite.DB, container.ID)
-	store.MarkInvocationRunning(sqlite.DB, inv.ID, container.ID)
-
-	defer store.MarkContainerFree(sqlite.DB, container.ID)
-
-	res, err := f.invokeFunc(ctx, container.HostPort, payload)
-
-	f.completeInvocation(inv, container.ID, res, err)
-
-	return res, true, err
+	f.completeInvocation(inv, container.ID, res, nil)
+	return res, true, nil
 }
 
 func (f *FunctionInvoker) coldStartInvokeWithInvocation(
@@ -104,23 +115,13 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 
 	image := config.ImageRef(config.FunctionsRepo, fn.Name, fn.Version)
 
-	slog.Info("container_lifecycle", "stage", "pulling", "function", fn.Name)
-
 	if err := f.imageClient.PullImage(ctx, image); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("pull image failed: %w", err)
 	}
 
 	containerID, err := f.createAndStart(ctx, fn.Name, image)
 	if err != nil {
 		return nil, err
-	}
-
-	inspect, err := f.containerClient.InspectContainer(ctx, containerID)
-	if err != nil || inspect.Container.State == nil || !inspect.Container.State.Running {
-		slog.Error("container_exited_early", "id", containerID)
-
-		_ = f.containerClient.DeleteContainer(ctx, containerID)
-		return nil, fmt.Errorf("container exited early")
 	}
 
 	logger := slog.With("container_id", containerID, "function", fn.Name)
@@ -139,25 +140,97 @@ func (f *FunctionInvoker) coldStartInvokeWithInvocation(
 
 	logger.Info("container_lifecycle", "stage", "healthy")
 
-	store.MarkInvocationRunning(sqlite.DB, inv.ID, containerID)
+	if err := f.store.CreateContainer(&models.Container{
+		ID:         containerID,
+		FunctionID: fn.ID,
+		Status:     "busy",
+		HostPort:   hostPort,
+		LastUsedAt: time.Now(),
+		CreatedAt:  time.Now(),
+	}); err != nil {
+		slog.Warn("failed to persist container", "error", err)
+	}
 
-	res, err := f.invokeFunc(ctx, hostPort, payload)
+	if err := f.store.MarkInvocationRunning(inv.ID, containerID); err != nil {
+		return nil, err
+	}
+
+	res, err := f.containerClient.InvokeContainer(ctx, hostPort, payload)
+	if err != nil {
+		_ = f.containerClient.DeleteContainer(ctx, containerID)
+		_ = f.store.RemoveContainer(containerID)
+
+		f.completeInvocation(inv, containerID, nil, err)
+		return nil, err
+	}
 
 	logger.Info("container_lifecycle", "stage", "invoking")
 
-	if err == nil {
-		f.persistContainer(fn.ID, containerID, hostPort)
+	if err := f.store.MarkContainerFree(containerID); err != nil {
+		slog.Error("mark container free failed", "error", err)
 	}
 
+	f.completeInvocation(inv, containerID, res, nil)
+
+	return res, nil
+}
+
+func (f *FunctionInvoker) createAndStart(ctx context.Context, name, image string) (string, error) {
+
+	containerID, err := f.containerClient.CreateContainer(ctx, name, image, nil)
 	if err != nil {
-		_ = f.containerClient.DeleteContainer(ctx, containerID)
+		return "", fmt.Errorf("create container failed: %w", err)
 	}
 
-	defer store.MarkContainerFree(sqlite.DB, containerID)
+	if err := f.containerClient.StartContainer(ctx, containerID); err != nil {
+		return "", fmt.Errorf("start container failed: %w", err)
+	}
 
-	f.completeInvocation(inv, containerID, res, err)
+	return containerID, nil
+}
 
-	return res, err
+func (f *FunctionInvoker) waitForPort(ctx context.Context, containerID string) (string, error) {
+
+	port, err := network.ParsePort(config.ContainerPort)
+	if err != nil {
+		return "", fmt.Errorf("parse port failed: %w", err)
+	}
+
+	deadline := time.Now().Add(config.PortTimeout)
+
+	for time.Now().Before(deadline) {
+		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
+		if err == nil && inspect.Container.NetworkSettings != nil {
+			bindings := inspect.Container.NetworkSettings.Ports[port]
+			if len(bindings) > 0 {
+				return bindings[0].HostPort, nil
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+
+	return "", fmt.Errorf("port not available in time")
+}
+
+func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string) error {
+
+	deadline := time.Now().Add(config.HealthTimeout)
+
+	for time.Now().Before(deadline) {
+		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
+		if err == nil && inspect.Container.State != nil {
+			if !inspect.Container.State.Running {
+				return fmt.Errorf("container exited early")
+			}
+			if inspect.Container.State.Health != nil &&
+				inspect.Container.State.Health.Status == "healthy" {
+				return nil
+			}
+		}
+		time.Sleep(300 * time.Millisecond)
+	}
+
+	return fmt.Errorf("container not healthy in time")
 }
 
 func (f *FunctionInvoker) completeInvocation(
@@ -172,7 +245,9 @@ func (f *FunctionInvoker) completeInvocation(
 	var responsePayload []byte
 
 	if res != nil {
-		responsePayload, _ = json.Marshal(res)
+		if b, marshalErr := json.Marshal(res); marshalErr == nil {
+			responsePayload = b
+		}
 	}
 
 	if err != nil {
@@ -183,113 +258,26 @@ func (f *FunctionInvoker) completeInvocation(
 		exitCode = 0
 	}
 
-	logs := ""
-
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
+	var logs string
 	if containerID != "" {
-		l, logErr := f.containerClient.LogContainer(ctx, containerID)
-		if logErr != nil {
-			slog.Warn("log_fetch_failed", "container_id", containerID, "error", logErr)
-		} else {
+		if l, logErr := f.containerClient.LogContainer(ctx, containerID); logErr == nil {
 			logs = l
-
-			if len(logs) > 5000 {
-				logs = logs[:5000] + "...(truncated)"
-			}
+		} else {
+			slog.Warn("failed to fetch logs", "error", logErr)
 		}
 	}
 
-	store.CompleteInvocation(
-		sqlite.DB,
+	if err := f.store.CompleteInvocation(
 		inv.ID,
 		status,
 		exitCode,
 		responsePayload,
 		logs,
 		inv.StartedAt,
-	)
-}
-
-func (f *FunctionInvoker) createAndStart(ctx context.Context, name, image string) (string, error) {
-
-	containerID, err := f.containerClient.CreateContainer(ctx, name, image, nil)
-	if err != nil {
-		slog.Error("container_create_failed", "function", name, "error", err)
-		return "", err
+	); err != nil {
+		slog.Error("complete invocation failed", "error", err)
 	}
-
-	if err := f.containerClient.StartContainer(ctx, containerID); err != nil {
-		slog.Error("container_start_failed", "container_id", containerID, "error", err)
-		return "", err
-	}
-
-	slog.Info("container_lifecycle", "stage", "starting", "container_id", containerID)
-
-	return containerID, nil
-}
-
-func (f *FunctionInvoker) waitForPort(ctx context.Context, containerID string) (string, error) {
-
-	port, err := network.ParsePort(config.ContainerPort)
-	if err != nil {
-		return "", fmt.Errorf("failed to parse port: %w", err)
-	}
-
-	deadline := time.Now().Add(config.PortTimeout)
-
-	for time.Now().Before(deadline) {
-
-		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
-
-		if err == nil && inspect.Container.NetworkSettings != nil {
-			bindings := inspect.Container.NetworkSettings.Ports[port]
-			if len(bindings) > 0 {
-				return bindings[0].HostPort, nil
-			}
-		}
-
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	return "", fmt.Errorf("port not available in time")
-}
-
-func (f *FunctionInvoker) waitForHealthy(ctx context.Context, containerID string) error {
-
-	deadline := time.Now().Add(config.HealthTimeout)
-
-	for time.Now().Before(deadline) {
-
-		inspect, err := f.containerClient.InspectContainer(ctx, containerID)
-
-		if err == nil && inspect.Container.State != nil {
-
-			if !inspect.Container.State.Running {
-				return fmt.Errorf("container exited before becoming healthy")
-			}
-
-			if inspect.Container.State.Health != nil &&
-				inspect.Container.State.Health.Status == "healthy" {
-				return nil
-			}
-		}
-
-		time.Sleep(300 * time.Millisecond)
-	}
-
-	return fmt.Errorf("container did not become healthy in time")
-}
-
-func (f *FunctionInvoker) persistContainer(fnID int, containerID, hostPort string) {
-
-	store.CreateContainer(sqlite.DB, &models.Container{
-		ID:         containerID,
-		FunctionID: fnID,
-		Status:     "busy",
-		HostPort:   hostPort,
-		LastUsedAt: time.Now(),
-		CreatedAt:  time.Now(),
-	})
 }

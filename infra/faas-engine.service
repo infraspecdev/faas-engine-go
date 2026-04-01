@@ -11,6 +11,7 @@ Restart=always
 RestartSec=5
 
 Environment=PORT=8080
+Environment=DB_URL=/opt/faas-engine/faas.db
 
 [Install]
 WantedBy=multi-user.target

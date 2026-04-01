@@ -2,32 +2,55 @@ package sqlite
 
 import (
 	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 
 	_ "modernc.org/sqlite"
 )
 
-var DB *sql.DB
+var db *sql.DB
 
-func InitDB() error {
+func InitDB() (*sql.DB, error) {
+	dbURL := os.Getenv("DB_URL")
+
+	if dbURL == "" {
+		dbURL = "internal/sqlite/faas-engine-go.db"
+	}
+
+	if strings.HasPrefix(dbURL, "/") {
+		dir := filepath.Dir(dbURL)
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create db dir: %w", err)
+		}
+	}
+
 	var err error
-
-	DB, err = sql.Open("sqlite", "internal/sqlite/faas-engine-go.db")
+	db, err = sql.Open("sqlite", dbURL)
 	if err != nil {
-		return err
+		return nil, fmt.Errorf("failed to open db: %w", err)
 	}
 
-	err = DB.Ping()
-	if err != nil {
-		return err
+	if _, err := db.Exec("PRAGMA journal_mode=WAL;"); err != nil {
+		return nil, fmt.Errorf("failed to enable WAL: %w", err)
 	}
 
-	_, err = DB.Exec("PRAGMA foreign_keys = ON;")
-	if err != nil {
-		return err
+	if err := db.Ping(); err != nil {
+		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
-	DB.Exec("PRAGMA journal_mode = WAL;")
-	DB.Exec("PRAGMA busy_timeout = 5000;")
-	return nil
+
+	fmt.Println("Using DB:", dbURL)
+
+	return db, nil
+}
+
+func SetDB(conn *sql.DB) {
+	db = conn
+}
+
+func GetDB() *sql.DB {
+	return db
 }
 
 func InitTables() error {
@@ -123,7 +146,7 @@ func InitTables() error {
 	}
 
 	for _, q := range queries {
-		if _, err := DB.Exec(q); err != nil {
+		if _, err := db.Exec(q); err != nil {
 			return err
 		}
 	}

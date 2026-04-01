@@ -2,6 +2,7 @@ package buildcontext
 
 import (
 	"archive/tar"
+	"encoding/json"
 	"faas-engine-go/internal/config"
 	"fmt"
 	"io"
@@ -31,22 +32,51 @@ func ValidateFunction(runtime string, dirPath string) error {
 }
 
 func validateNode(dir string) error {
-	return filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
+	entryFile, err := findNodeEntryPoint(dir)
+	if err != nil {
+		return err
+	}
 
-		if filepath.Ext(path) == ".js" {
-			cmd := exec.Command("node", "--check", path)
-
-			out, err := cmd.CombinedOutput()
-			if err != nil {
-				return fmt.Errorf("syntax error in %s:\n%s", filepath.Base(path), string(out))
-			}
-		}
-
+	if entryFile == "" {
 		return nil
-	})
+	}
+
+	cmd := exec.Command("node", "--check", entryFile)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("syntax error in %s:\n%s", filepath.Base(entryFile), string(out))
+	}
+
+	return nil
+}
+
+func findNodeEntryPoint(dir string) (string, error) {
+	indexPath := filepath.Join(dir, "index.js")
+	if _, err := os.Stat(indexPath); err == nil {
+		return indexPath, nil
+	}
+
+	packagePath := filepath.Join(dir, "package.json")
+	data, err := os.ReadFile(packagePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+
+	var pkg struct {
+		Main string `json:"main"`
+	}
+	if err := json.Unmarshal(data, &pkg); err != nil {
+		return "", err
+	}
+
+	if pkg.Main == "" {
+		return "", nil
+	}
+
+	return filepath.Join(dir, pkg.Main), nil
 }
 
 func validatePython(dir string) error {
