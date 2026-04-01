@@ -51,9 +51,10 @@ func init() {
 	if err := godotenv.Load(); err != nil {
 		slog.Warn("could not load .env file, using default configuration")
 	}
+	// Use PROXY_URL for proxy endpoint, fallback to localhost
 	targetUrl := os.Getenv("PROXY_URL")
 	if targetUrl == "" {
-		targetUrl = "http://10.30.20.196"
+		targetUrl = "http://localhost"
 	}
 	targetPort := os.Getenv("PROXY_PORT")
 	if targetPort == "" {
@@ -64,6 +65,6 @@ func init() {
 		&serverAddr,
 		"server",
 		targetUrl+":"+targetPort,
-		"Address of the runtime manager server",
+		"Address of the proxy server",
 	)
 }

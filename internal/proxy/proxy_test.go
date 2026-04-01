@@ -87,7 +87,8 @@ func TestGETToPOSTConversion(t *testing.T) {
 		t.Fatalf("invalid JSON body: %v", err)
 	}
 
-	if data["a"] != float64(10) || data["b"] != "test" {
+	// Query params are treated as strings, not implicitly converted to numbers
+	if data["a"] != "10" || data["b"] != "test" {
 		t.Fatalf("unexpected body: %v", data)
 	}
 }

@@ -25,3 +25,9 @@ const (
 	FunctionsRepo = "functions"
 	RuntimesRepo  = "runtimes"
 )
+
+// Proxy timeouts
+const (
+	// DefaultProxyTimeout is the default response timeout for proxy requests
+	DefaultProxyTimeout = 30 * time.Second
+)
