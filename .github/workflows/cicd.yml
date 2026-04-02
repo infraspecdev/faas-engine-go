@@ -174,32 +174,82 @@ jobs:
             else
               echo "faas-engine user already exists"
             fi
-            
+
             # Create and configure deployment directory
             sudo mkdir -p /opt/faas-engine
             sudo chown -R faas-engine:faas-engine /opt/faas-engine
             sudo chmod 755 /opt/faas-engine
             echo "Deployment directory configured"
-      - name: Copy runtimes to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.TARGET_PRIVATE_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./runtimes/"
-          target: "/opt/faas-engine/"
-          overwrite: true
-
-      - name: Fix runtime directory permissions
+      - name: Clean old runtimes before copy
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            echo "Cleaning old deployment files..."
+            sudo rm -rf /opt/faas-engine/runtimes
+            sudo rm -f /opt/faas-engine/runtime-manager
+            echo "Ready for new deployment"
+
+      - name: Copy all artifacts to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: "./artifacts/*,./runtimes/"
+          target: "/tmp"
+
+      - name: Move artifacts to respective paths
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            echo "=== Moving artifacts from /tmp to /opt/faas-engine ==="
+
+            # Create backups before moving
+            sudo mkdir -p /backup/bin /backup/services
+            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
+
+            if [ -f /etc/systemd/system/faas-engine.service ]; then
+              sudo cp /etc/systemd/system/faas-engine.service \
+                /backup/services/faas-engine.service.$TIMESTAMP
+            fi
+
+            # Move files from /tmp to their destinations
+            echo "Moving binary..."
+            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
+
+            echo "Moving service file..."
+            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
+
+            echo "Moving runtimes..."
+            sudo mv /tmp/runtimes /opt/faas-engine/runtimes
+
+            echo "All artifacts moved successfully"
+
+      - name: Fix permissions and ownership
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            echo "=== Setting faas-engine ownership and permissions ==="
+            sudo chown faas-engine:faas-engine /opt/faas-engine/runtime-manager
+            sudo chmod 755 /opt/faas-engine/runtime-manager
+
             sudo chown -R faas-engine:faas-engine /opt/faas-engine/runtimes
             sudo chmod -R 755 /opt/faas-engine/runtimes
-            echo "Runtime permissions fixed"
+
+            sudo chown root:root /etc/systemd/system/faas-engine.service
+            sudo chmod 644 /etc/systemd/system/faas-engine.service
+
+            echo "Permissions and ownership configured"
 
       - name: Build runtime images on EC2
         uses: appleboy/ssh-action@v1
@@ -215,25 +265,8 @@ jobs:
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
             echo "Runtime images built and pushed to local registry"
-      - name: Copy binary to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.TARGET_PRIVATE_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/runtime-manager"
-          target: "/tmp"
 
-      - name: Copy service file to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{ vars.TARGET_PRIVATE_IP }}
-          username: ${{ secrets.SSH_USER }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/faas-engine.service"
-          target: "/tmp"
-
-      - name: Deploy and restart service
+      - name: Restart services
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
@@ -241,44 +274,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             set -e
-            echo "=== Starting Deployment ==="
-            echo "=== DEBUG: /tmp contents ==="
-            ls -l /tmp
-            echo "=== Stopping existing service ==="
-            sudo systemctl stop faas-engine || true
-            # Ensure required directories exist
-            sudo mkdir -p /opt/faas-engine
-            sudo mkdir -p /backup/bin
-            sudo mkdir -p /backup/services
-            TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-            echo "=== Backing up existing binary if present ==="
-            if [ -f /opt/faas-engine/runtime-manager ]; then
-              sudo cp /opt/faas-engine/runtime-manager \
-                /backup/bin/runtime-manager.$TIMESTAMP
-              echo "Binary backup created"
-            else
-              echo "No existing binary to back up"
-            fi
-            echo "=== Backing up existing service file if present ==="
-            if [ -f /etc/systemd/system/faas-engine.service ]; then
-              sudo cp /etc/systemd/system/faas-engine.service \
-                /backup/services/faas-engine.service.$TIMESTAMP
-              echo "Service backup created"
-            else
-              echo "No existing service file to back up"
-            fi
-            echo "=== Cleaning old runtime-manager completely ==="
-            sudo rm -rf /opt/faas-engine/runtime-manager
-            echo "=== Deploying new binary ==="
-            sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
-            sudo chown faas-engine:faas-engine /opt/faas-engine/runtime-manager
-            sudo chmod 755 /opt/faas-engine/runtime-manager
-            echo "=== Deploying new service file ==="
-            sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
-            echo "=== Reloading systemd ==="
+            echo "=== Restarting FaaS Engine Service ==="
             sudo systemctl daemon-reload
             sudo systemctl enable faas-engine
-            echo "=== Starting service ==="
             sudo systemctl restart faas-engine
             echo "=== Checking Service Status ==="
             if ! sudo systemctl is-active --quiet faas-engine; then
@@ -286,4 +284,4 @@ jobs:
               sudo journalctl -u faas-engine -n 50 --no-pager
               exit 1
             fi
-            echo "Service deployed successfully"
+            echo "Service deployed and started successfully"
