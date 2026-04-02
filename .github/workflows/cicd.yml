@@ -167,8 +167,19 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
+            # Create dedicated faas-engine user if it doesn't exist
+            if ! id faas-engine &>/dev/null; then
+              sudo useradd -r -s /bin/false faas-engine
+              echo "Created faas-engine user"
+            else
+              echo "faas-engine user already exists"
+            fi
+            
+            # Create and configure deployment directory
             sudo mkdir -p /opt/faas-engine
-            sudo chown -R $USER:$USER /opt/faas-engine
+            sudo chown -R faas-engine:faas-engine /opt/faas-engine
+            sudo chmod 755 /opt/faas-engine
+            echo "Deployment directory configured"
       - name: Copy runtimes to server
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -200,7 +211,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/runtime-manager"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Copy service file to server
         uses: appleboy/scp-action@v0.1.7
@@ -210,7 +220,6 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./artifacts/faas-engine.service"
           target: "/tmp"
-          # strip_components: 1
 
       - name: Deploy and restart service
         uses: appleboy/ssh-action@v1
@@ -250,7 +259,8 @@ jobs:
             sudo rm -rf /opt/faas-engine/runtime-manager
             echo "=== Deploying new binary ==="
             sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
-            sudo chmod +x /opt/faas-engine/runtime-manager
+            sudo chown faas-engine:faas-engine /opt/faas-engine/runtime-manager
+            sudo chmod 755 /opt/faas-engine/runtime-manager
             echo "=== Deploying new service file ==="
             sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
             echo "=== Reloading systemd ==="
