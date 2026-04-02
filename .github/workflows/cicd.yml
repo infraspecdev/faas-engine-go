@@ -188,6 +188,18 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           source: "./runtimes/"
           target: "/opt/faas-engine/"
+          overwrite: true
+
+      - name: Fix runtime directory permissions
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ vars.TARGET_PRIVATE_IP }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            sudo chown -R faas-engine:faas-engine /opt/faas-engine/runtimes
+            sudo chmod -R 755 /opt/faas-engine/runtimes
+            echo "Runtime permissions fixed"
 
       - name: Build runtime images on EC2
         uses: appleboy/ssh-action@v1
