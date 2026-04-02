@@ -5,12 +5,13 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=ec2-user
+User=faas-engine
 ExecStart=/opt/faas-engine/runtime-manager
 Restart=always
 RestartSec=5
 
 Environment=PORT=8080
+Environment=DB_URL=/opt/faas-engine/faas.db
 
 [Install]
 WantedBy=multi-user.target

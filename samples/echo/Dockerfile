@@ -13,7 +13,7 @@ WORKDIR /app
 COPY --from=builder /app/app . 
 EXPOSE 8080
 
-HEALTHCHECK --interval=2s --timeout=2s --start-period=5s --retries=5 \
+HEALTHCHECK --interval=1s --timeout=1s --retries=5 \
     CMD ["./app", "--health"]
 
 CMD ["./app"]

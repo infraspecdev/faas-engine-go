@@ -7,14 +7,16 @@ import (
 	"fmt"
 	"os"
 
+	"faas-engine-go/internal/config"
+
 	"github.com/spf13/cobra"
 )
 
 var (
 	serverAddr   string
-	filePath     string
 	functionName string
 	data         string
+	runtimeName  string
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -32,7 +34,7 @@ var rootCmd = &cobra.Command{
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 }
@@ -50,7 +52,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(
 		&serverAddr,
 		"server",
-		"http://localhost:8080",
+		config.ProxyURL(),
 		"Address of the runtime manager server",
 	)
 }
