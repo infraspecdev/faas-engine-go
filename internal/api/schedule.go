@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -98,6 +99,7 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 
 		fn, err := store.GetActiveFunction(db, functionName)
 		if err != nil || fn == nil {
+			slog.Warn("function not found for schedule creation", "function", functionName)
 			writeError(w, http.StatusBadRequest, "function not found or inactive")
 			return
 		}
@@ -108,21 +110,29 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 			Payload:    req.Payload,
 		}
 
+		slog.Info("creating schedule", "function", functionName, "cron", req.CronExpr)
+
 		// Persist to database first to ensure durability.
 		// If scheduler registration fails, the schedule entry exists in DB and
 		// will be picked up by LoadSchedules on the next restart.
 		if err := store.CreateSchedule(db, &s); err != nil {
+			slog.Error("failed to create schedule in database", "function", functionName, "error", err)
 			scheduler.RemoveSchedule(s.ID)
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 
+		slog.Info("schedule saved to database", "schedule_id", s.ID, "function", functionName)
+
 		// Register with cron scheduler after DB persistence.
 		// If this fails, the schedule is still in the DB and can be re-registered on restart.
 		if err := scheduler.RegisterSchedule(s); err != nil {
+			slog.Error("failed to register schedule with scheduler", "schedule_id", s.ID, "function", functionName, "error", err)
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+
+		slog.Info("schedule registered with scheduler", "schedule_id", s.ID, "function", functionName, "cron", req.CronExpr)
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
@@ -145,13 +155,18 @@ func DeleteScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 
 		db := sqlite.GetDB()
 
+		slog.Info("deleting schedule", "schedule_id", id)
+
 		// Delete from DB first for durability.
 		// If the app crashes after this point but before removing from scheduler,
 		// LoadSchedules on restart will succeed (DB already deleted).
 		if err := store.DeleteSchedule(db, id); err != nil {
+			slog.Error("failed to delete schedule from database", "schedule_id", id, "error", err)
 			writeError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
+
+		slog.Info("schedule deleted from database", "schedule_id", id)
 
 		// Remove from cron scheduler after DB deletion.
 		// If the app crashes between DB delete and scheduler removal, the schedule entry
@@ -159,6 +174,8 @@ func DeleteScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 		// Important: DB delete MUST come first to prevent zombie scheduler entries
 		// being re-registered on restart.
 		scheduler.RemoveSchedule(id)
+
+		slog.Info("schedule removed from scheduler", "schedule_id", id)
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]string{

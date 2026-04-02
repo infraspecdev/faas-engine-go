@@ -41,7 +41,7 @@ func scanScheduleFromRows(rows *sql.Rows) (*models.Schedule, error) {
 	err := rows.Scan(
 		&s.ID,
 		&s.FunctionID,
-		&s.FunctionName, // ✅ FIX: capture f.name
+		&s.FunctionName,
 		&s.CronExpr,
 		&s.Payload,
 		&s.CreatedAt,

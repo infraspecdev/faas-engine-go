@@ -203,7 +203,9 @@ func CompleteInvocationAndMarkFree(
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	// Update invocation
 	duration := int(time.Since(startedAt).Milliseconds())

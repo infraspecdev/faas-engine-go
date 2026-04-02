@@ -44,7 +44,9 @@ func newInvocation(fnID string, status string) *models.Invocation {
 
 func TestCreateAndGetInvocation(t *testing.T) {
 	db := setupInvocationDB(t)
-	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`); err != nil {
+		t.Fatal(err)
+	}
 
 	fnID := createTestFunction(db, "test-func", "v1")
 	inv := newInvocation(fnID, "pending")
@@ -78,7 +80,9 @@ func TestGetInvocationByID_NotFound(t *testing.T) {
 
 func TestMarkInvocationRunning(t *testing.T) {
 	db := setupInvocationDB(t)
-	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`); err != nil {
+		t.Fatal(err)
+	}
 
 	fnID := createTestFunction(db, "test-func", "v1")
 	inv := newInvocation(fnID, "pending")
@@ -97,7 +101,9 @@ func TestMarkInvocationRunning(t *testing.T) {
 
 func TestCompleteInvocation(t *testing.T) {
 	db := setupInvocationDB(t)
-	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`); err != nil {
+		t.Fatal(err)
+	}
 
 	fnID := createTestFunction(db, "test-func", "v1")
 
@@ -131,7 +137,9 @@ func TestCompleteInvocation(t *testing.T) {
 
 func TestListInvocationsByFunction(t *testing.T) {
 	db := setupInvocationDB(t)
-	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`); err != nil {
+		t.Fatal(err)
+	}
 
 	fnID := createTestFunction(db, "test-func", "v1")
 
@@ -151,7 +159,9 @@ func TestListInvocationsByFunction(t *testing.T) {
 
 func TestListInvocationsByStatus(t *testing.T) {
 	db := setupInvocationDB(t)
-	db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`)
+	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS functions (id TEXT PRIMARY KEY, name TEXT, version TEXT, package_checksum TEXT, image TEXT, runtime TEXT, schedule_cron TEXT, endpoint TEXT, status TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);`); err != nil {
+		t.Fatal(err)
+	}
 
 	fnID := createTestFunction(db, "test-func", "v1")
 

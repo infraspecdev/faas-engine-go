@@ -111,7 +111,7 @@ func GetContainersByFunction(db *sql.DB, functionID string) ([]models.Container,
 		query = "SELECT " + containerColumns + " FROM containers WHERE function_id=?"
 		rows, err = db.Query(query, functionID)
 	}
-	
+
 	if err != nil {
 		return nil, err
 	}
@@ -137,7 +137,9 @@ func GetFreeContainer(db *sql.DB, functionID string) (*models.Container, error) 
 	if err != nil {
 		return nil, err
 	}
-	defer tx.Rollback()
+	defer func() {
+		_ = tx.Rollback()
+	}()
 
 	// First, find the free container
 	selectQuery := `

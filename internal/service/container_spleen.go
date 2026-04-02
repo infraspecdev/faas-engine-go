@@ -7,79 +7,132 @@ import (
 	"faas-engine-go/internal/sdk"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 )
 
-func ContainerSpleen(containerClient sdk.ContainerClient, s core.Store) {
+// ContainerSpleen starts a background worker that cleans up idle containers
+// Returns a stop channel that should be closed during graceful shutdown
+func ContainerSpleen(ctx context.Context, containerClient sdk.ContainerClient, s core.Store) chan struct{} {
 
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(30 * time.Second) // Increased from 10s to reduce DB contention
+	stopCh := make(chan struct{})
 
 	go func() {
+		defer ticker.Stop() // Ensure ticker is cleaned up
 
-		for range ticker.C {
-
-			containers, err := s.GetContainersByFunction("") // Get all containers
-			if err != nil {
-				slog.Error("failed to get containers", "error", err)
-				continue
-			}
-
-			for _, container := range containers {
-				if time.Since(container.LastUsedAt) > config.ContainerIdleTimeout {
-					slog.Info(
-						"container_lifecycle",
-						"container_id", container.ID,
-						"stage", "spleen_cleanup",
-					)
-
-					// Try to stop container with timeout
-					// Don't block on stop failure - proceed to delete
-					stopCtx, stopCancel := context.WithTimeout(
-						context.Background(),
-						config.ContainerCleanupStopTimeout,
-					)
-					if err := containerClient.StopContainer(stopCtx, container.ID); err != nil {
-						slog.Error(
-							"container_stop_failed",
-							"container_id", container.ID,
-							"error", err,
-						)
-					}
-					stopCancel()
-
-					// Try to delete container with timeout
-					// If Docker delete fails, still remove from DB to prevent orphaning
-					deleteCtx, deleteCancel := context.WithTimeout(
-						context.Background(),
-						config.ContainerCleanupDeleteTimeout,
-					)
-					nameErr := containerClient.DeleteContainer(deleteCtx, container.ID)
-					deleteCancel()
-
-					if nameErr != nil {
-						slog.Warn(
-							"container_delete_failed_proceeding_to_db_removal",
-							"container_id", container.ID,
-							"error", nameErr,
-						)
-						// Continue to db removal even if Docker delete failed
-					}
-
-					// Always try to remove from database
-					if err := s.RemoveContainer(container.ID); err != nil {
-						slog.Error("db_remove_failed", "container_id", container.ID, "error", err)
-					} else {
-						slog.Info(
-							"container_lifecycle",
-							"container_id", container.ID,
-							"stage", "deleted",
-						)
-					}
-				}
+		for {
+			select {
+			case <-ctx.Done():
+				slog.Info("container_spleen stopped by context cancellation")
+				return
+			case <-stopCh:
+				slog.Info("container_spleen stopped")
+				return
+			case <-ticker.C:
+				cleanupIdleContainers(ctx, containerClient, s)
 			}
 		}
 	}()
+
+	return stopCh
+}
+
+// cleanupIdleContainers processes idle container cleanup with parallelization
+func cleanupIdleContainers(ctx context.Context, containerClient sdk.ContainerClient, s core.Store) {
+	containers, err := s.GetContainersByFunction("") // Get all containers
+	if err != nil {
+		slog.Error("failed to get containers for cleanup", "error", err)
+		return
+	}
+
+	if len(containers) == 0 {
+		return
+	}
+
+	// Filter idle containers
+	var idleContainers []string
+	for _, container := range containers {
+		if time.Since(container.LastUsedAt) > config.ContainerIdleTimeout {
+			idleContainers = append(idleContainers, container.ID)
+		}
+	}
+
+	if len(idleContainers) == 0 {
+		return
+	}
+
+	slog.Info("cleanup cycle started", "idle_containers", len(idleContainers))
+
+	// Process cleanups in parallel with limited workers to reduce DB lock contention
+	const numWorkers = 2
+	containerCh := make(chan string, len(idleContainers))
+	var wg sync.WaitGroup
+
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for containerID := range containerCh {
+				cleanupSingleContainer(ctx, containerClient, s, containerID)
+			}
+		}()
+	}
+
+	// Send containers to workers
+	for _, containerID := range idleContainers {
+		containerCh <- containerID
+	}
+	close(containerCh)
+
+	// Wait for all cleanup workers to complete
+	wg.Wait()
+	slog.Info("cleanup cycle completed", "processed", len(idleContainers))
+}
+
+// cleanupSingleContainer handles the cleanup of a single container
+func cleanupSingleContainer(ctx context.Context, containerClient sdk.ContainerClient, s core.Store, containerID string) {
+	slog.Info(
+		"container_lifecycle",
+		"container_id", containerID,
+		"stage", "spleen_cleanup",
+	)
+
+	// Try to stop container with timeout
+	stopCtx, stopCancel := context.WithTimeout(ctx, config.ContainerCleanupStopTimeout)
+	if err := containerClient.StopContainer(stopCtx, containerID); err != nil {
+		slog.Warn(
+			"failed to stop idle container",
+			"container_id", containerID,
+			"error", err,
+		)
+		// Continue to delete even if stop failed - force removal will handle it
+	}
+	stopCancel()
+
+	// Try to delete container from Docker
+	deleteCtx, deleteCancel := context.WithTimeout(ctx, config.ContainerCleanupDeleteTimeout)
+	if err := containerClient.DeleteContainer(deleteCtx, containerID); err != nil {
+		slog.Warn(
+			"failed to delete idle container from docker",
+			"container_id", containerID,
+			"error", err,
+		)
+		// Continue to remove from DB anyway to prevent orphaning
+	}
+	deleteCancel()
+
+	// Always remove from database
+	if err := s.RemoveContainer(containerID); err != nil {
+		slog.Error("failed to remove container from database", "container_id", containerID, "error", err)
+	} else {
+		slog.Info(
+			"container_lifecycle",
+			"container_id", containerID,
+			"stage", "deleted",
+		)
+	}
 }
 
 // GracefulShutdown stops all running containers and removes exited containers
@@ -224,8 +277,14 @@ func GracefulShutdown(ctx context.Context, containerClient sdk.ContainerClient, 
 	dockerResults := make([]deleteResult, 0, len(containersToRemove))
 	for result := range deleteResultsCh {
 		if result.dockerErr != nil {
-			removeFailed++
-			slog.Warn("failed to delete container from Docker", "container_id", result.containerID[:12], "error", result.dockerErr)
+			// "No such container" is not a failure - means it was already deleted (likely by spleen)
+			errMsg := result.dockerErr.Error()
+			if !strings.Contains(errMsg, "No such container") {
+				removeFailed++
+				slog.Warn("failed to delete container from Docker", "container_id", result.containerID[:12], "error", result.dockerErr)
+			} else {
+				slog.Info("container already removed (likely by cleanup worker)", "container_id", result.containerID[:12])
+			}
 		}
 		dockerResults = append(dockerResults, result)
 	}

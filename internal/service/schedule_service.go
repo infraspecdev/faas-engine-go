@@ -165,6 +165,7 @@ func (s *SchedulerService) RegisterSchedule(sch models.Schedule) error {
 	}
 
 	s.entries[sch.ID] = entryID
+	slog.Info("schedule_registered", "schedule_id", sch.ID, "cron", sch.CronExpr)
 	return nil
 }
 

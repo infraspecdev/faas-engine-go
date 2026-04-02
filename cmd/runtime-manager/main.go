@@ -52,7 +52,7 @@ func main() {
 
 	// Start background container cleanup worker
 	store := service.NewStore(db)
-	service.ContainerSpleen(docker, store)
+	spleenStopCh := service.ContainerSpleen(ctx, docker, store)
 
 	// Setup router
 	r := mux.NewRouter()
@@ -117,11 +117,15 @@ func main() {
 	<-quit
 	slog.Info("shutdown signal received, initiating graceful shutdown")
 
-	// Phase 1: Stop scheduler (prevents new triggers)
+	// Phase 1: Stop spleen cleanup worker
+	close(spleenStopCh)
+	slog.Info("container_spleen stopped")
+
+	// Phase 2: Stop scheduler (prevents new triggers)
 	scheduler.Stop()
 	slog.Info("scheduler stopped")
 
-	// Phase 2: Shutdown HTTP server (waits for in-flight requests)
+	// Phase 3: Shutdown HTTP server (waits for in-flight requests)
 	ctx, shutdownCancel := context.WithTimeout(context.Background(), config.ServerShutdownTimeout)
 	if err := srv.Shutdown(ctx); err != nil {
 		slog.Error("server forced to shutdown", "error", err)
@@ -130,7 +134,7 @@ func main() {
 	}
 	shutdownCancel()
 
-	// Phase 3: Graceful container cleanup (stop all running containers and remove exited ones)
+	// Phase 4: Graceful container cleanup (stop all running containers and remove exited ones)
 	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), config.GracefulShutdownTimeout)
 	defer cleanupCancel()
 

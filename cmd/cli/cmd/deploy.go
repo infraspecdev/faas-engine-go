@@ -35,7 +35,7 @@ to quickly create a Cobra application.`,
 		tarstream, err := buildcontext.CreateTarStream(abspath, runtimeName)
 		if err != nil {
 			color.Red(" Failed. \n\n%s\n", err.Error())
-			return nil
+			return fmt.Errorf("failed to package function code: %w", err)
 		}
 
 		if _, err := color.New(color.FgGreen).Println(" Done."); err != nil {

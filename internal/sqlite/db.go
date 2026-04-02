@@ -41,8 +41,12 @@ func InitDB() (*sql.DB, error) {
 	if err := db.Ping(); err != nil {
 		return nil, fmt.Errorf("failed to ping db: %w", err)
 	}
-	db.Exec("PRAGMA journal_mode = WAL;")
-	db.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", config.SQLiteBusyTimeout))
+	if _, err := db.Exec("PRAGMA journal_mode = WAL;"); err != nil {
+		return nil, fmt.Errorf("failed to set journal mode: %w", err)
+	}
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA busy_timeout = %d;", config.SQLiteBusyTimeout)); err != nil {
+		return nil, fmt.Errorf("failed to set busy timeout: %w", err)
+	}
 
 	// Optimize for concurrent writes
 	db.SetMaxOpenConns(config.MaxOpenConns)

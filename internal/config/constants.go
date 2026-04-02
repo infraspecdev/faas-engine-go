@@ -41,9 +41,9 @@ const (
 // graceful shutdown related constants
 const (
 	ServerShutdownTimeout       time.Duration = 30 * time.Second
-	GracefulShutdownTimeout     time.Duration = 60 * time.Second
-	ShutdownContainerStopTime   time.Duration = 15 * time.Second
-	ShutdownContainerDeleteTime time.Duration = 10 * time.Second
+	GracefulShutdownTimeout     time.Duration = 120 * time.Second
+	ShutdownContainerStopTime   time.Duration = 20 * time.Second
+	ShutdownContainerDeleteTime time.Duration = 15 * time.Second
 )
 
 // registry related constants

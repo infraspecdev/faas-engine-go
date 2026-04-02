@@ -45,7 +45,7 @@ func RuntimeURL() string {
 func ProxyURL() string {
 	url := os.Getenv("PROXY_URL")
 	if url == "" {
-		return "http://localhost:80"
+		return "http://localhost:8080"
 	}
 	return url
 }

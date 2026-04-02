@@ -127,12 +127,13 @@ func (d *DockerClient) StopContainer(ctx context.Context, containerID string) er
 	return nil
 }
 
-// DeleteContainer removes a stopped Docker container.
-// It does not force removal and returns an error if deletion fails.
+// DeleteContainer removes a Docker container.
+// Uses force removal to ensure containers are deleted even if they didn't stop cleanly.
+// This is important during graceful shutdown when containers may not respond to signals.
 func (d *DockerClient) DeleteContainer(ctx context.Context, containerID string) error {
 
 	_, err := d.cli.ContainerRemove(ctx, containerID, client.ContainerRemoveOptions{
-		Force: false,
+		Force: true,
 	})
 
 	if err != nil {

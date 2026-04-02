@@ -37,7 +37,8 @@ var scheduleCreateCmd = &cobra.Command{
 		functionName := args[0]
 
 		if cronExpr == "" {
-			return fmt.Errorf("cron expression is required")
+			color.Red("✗ Cron expression is required")
+			return fmt.Errorf("use --cron flag to specify a cron expression")
 		}
 
 		body := map[string]any{
@@ -47,13 +48,15 @@ var scheduleCreateCmd = &cobra.Command{
 		if data != "" {
 			var parsed any
 			if err := json.Unmarshal([]byte(data), &parsed); err != nil {
-				return fmt.Errorf("invalid JSON payload: %w", err)
+				color.Red("✗ Invalid JSON payload")
+				return fmt.Errorf("failed to parse JSON payload: %w", err)
 			}
 			body["payload"] = parsed
 		}
 
 		reqBody, err := json.Marshal(body)
 		if err != nil {
+			color.Red("✗ Failed to create schedule")
 			return err
 		}
 
@@ -62,7 +65,8 @@ var scheduleCreateCmd = &cobra.Command{
 
 		resp, err := http.Post(url, "application/json", bytes.NewBuffer(reqBody))
 		if err != nil {
-			return err
+			color.Red("✗ Failed to connect to server")
+			return fmt.Errorf("unable to reach runtime manager at %s: %w", serverAddr, err)
 		}
 		defer resp.Body.Close()
 
@@ -71,13 +75,15 @@ var scheduleCreateCmd = &cobra.Command{
 			var errResp map[string]string
 			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
 				if errMsg, ok := errResp["error"]; ok {
-					return fmt.Errorf("failed to create schedule: %s", errMsg)
+					color.Red("✗ Failed to create schedule")
+					return fmt.Errorf("%s", errMsg)
 				}
 			}
-			return fmt.Errorf("failed to create schedule: %s", resp.Status)
+			color.Red("✗ Failed to create schedule")
+			return fmt.Errorf("server error: %s", resp.Status)
 		}
 
-		fmt.Println("✅ schedule created successfully")
+		color.Green("✅ Schedule created successfully for %s", functionName)
 		return nil
 	},
 }
@@ -99,21 +105,24 @@ var scheduleListCmd = &cobra.Command{
 
 		resp, err := http.Get(url)
 		if err != nil {
-			return err
+			color.Red("✗ Failed to connect to server")
+			return fmt.Errorf("unable to reach runtime manager at %s: %w", serverAddr, err)
 		}
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return fmt.Errorf("failed: %s", resp.Status)
+			color.Red("✗ Failed to list schedules")
+			return fmt.Errorf("server error: %s", resp.Status)
 		}
 
 		var schedules []Schedule
 		if err := json.NewDecoder(resp.Body).Decode(&schedules); err != nil {
-			return err
+			color.Red("✗ Failed to parse response")
+			return fmt.Errorf("invalid response format: %w", err)
 		}
 
 		if len(schedules) == 0 {
-			color.Yellow("No schedules found")
+			color.Yellow("℧ No schedules found")
 			return nil
 		}
 
@@ -156,28 +165,37 @@ var scheduleDeleteCmd = &cobra.Command{
 			nil,
 		)
 		if err != nil {
+			color.Red("✗ Failed to delete schedule")
 			return err
 		}
 
 		client := &http.Client{}
 		resp, err := client.Do(req)
 		if err != nil {
-			return err
+			color.Red("✗ Failed to connect to server")
+			return fmt.Errorf("unable to reach runtime manager at %s: %w", serverAddr, err)
 		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode == http.StatusNotFound {
+			color.Yellow("℧ Schedule not found")
+			return nil
+		}
 
 		if resp.StatusCode != http.StatusOK {
 			// Parse error response to get detailed message
 			var errResp map[string]string
 			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
 				if errMsg, ok := errResp["error"]; ok {
-					return fmt.Errorf("failed to delete schedule: %s", errMsg)
+					color.Red("✗ Failed to delete schedule")
+					return fmt.Errorf("%s", errMsg)
 				}
 			}
-			return fmt.Errorf("failed to delete schedule: %s", resp.Status)
+			color.Red("✗ Failed to delete schedule")
+			return fmt.Errorf("server error: %s", resp.Status)
 		}
 
-		fmt.Println("✅ schedule deleted successfully")
+		color.Green("✅ Schedule deleted successfully")
 		return nil
 	},
 }
