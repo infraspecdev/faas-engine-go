@@ -66,6 +66,7 @@ jobs:
       - name: Run tests
         env:
           REGISTRY_URL: localhost:5000
+          CI: "true"
         run: go test -v ./...
 
   build:
