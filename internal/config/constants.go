@@ -69,3 +69,9 @@ const (
 const (
 	DefaultServerAddr = "http://localhost:8080"
 )
+
+// Proxy timeouts
+const (
+	// DefaultProxyTimeout is the default response timeout for proxy requests
+	DefaultProxyTimeout = 30 * time.Second
+)

@@ -1,0 +1,23 @@
+[Unit]
+Description=FaaS Engine Proxy
+After=network.target
+
+[Service]
+Type=simple
+User=faas-engine
+WorkingDirectory=/opt/faas-engine
+
+ExecStart=/opt/faas-engine/proxy
+
+Restart=always
+RestartSec=5
+
+Environment=RUNTIME_URL=http://localhost:8080
+
+StandardOutput=journal
+StandardError=journal
+
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
