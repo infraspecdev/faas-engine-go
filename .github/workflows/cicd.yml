@@ -312,6 +312,9 @@ jobs:
             sudo mv /tmp/artifacts/proxy /opt/faas-engine/proxy
             sudo chmod +x /opt/faas-engine/proxy
             sudo chown faas-engine:faas-engine /opt/faas-engine/proxy
+            
+            echo "=== Granting proxy permission to bind to privileged port 80 ==="
+            sudo setcap cap_net_bind_service=+ep /opt/faas-engine/proxy
 
             echo "=== Setting directory permissions ==="
             sudo chmod 755 /opt/faas-engine
