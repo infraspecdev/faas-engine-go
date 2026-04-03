@@ -5,7 +5,6 @@ on:
     branches:
       - main
       - feature/*
-      - refactor/*
   pull_request:
     branches:
       - main
@@ -93,9 +92,8 @@ jobs:
       - name: Build application
         run: |
           mkdir -p ./bin
-          go build -o ./bin/runtime-manager ./cmd/runtime-manager
-          go build -o ./bin/proxy ./cmd/proxy
-
+          go build -o ./bin/runtime-manager ./cmd/runtime-manager/.
+          go build -o ./bin/proxy ./cmd/proxy/.
       - name: Upload runtime-manager artifact
         uses: actions/upload-artifact@v4
         with:
@@ -108,13 +106,17 @@ jobs:
           name: proxy-binary
           path: ./bin/proxy
 
-      - name: Upload service artifact
+      - name: Upload faas-engine service artifact
         uses: actions/upload-artifact@v4
         with:
-          name: services
-          path: |
-            ./infra/faas-engine.service
-            ./infra/faas-proxy.service
+          name: faas-engine.service
+          path: ./infra/faas-engine.service
+
+      - name: Upload faas-proxy service artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: faas-proxy.service
+          path: ./infra/faas-proxy.service
 
   deploy:
     name: Deploy Application
@@ -125,7 +127,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v5
 
-      - name: Download build artifact
+      - name: Download runtime-manager artifact
         uses: actions/download-artifact@v4
         with:
           name: runtime-manager-binary
@@ -137,10 +139,16 @@ jobs:
           name: proxy-binary
           path: ./artifacts
 
-      - name: Download service artifact
+      - name: Download faas-engine service artifact
         uses: actions/download-artifact@v4
         with:
-          name: services
+          name: faas-engine.service
+          path: ./artifacts
+
+      - name: Download faas-proxy service artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: faas-proxy.service
           path: ./artifacts
 
       - name: Setting up WireGuard VPN
@@ -203,12 +211,12 @@ jobs:
           script: |
             echo "Building runtime images..."
             cd /opt/faas-engine/runtimes
+            docker build -t localhost:5000/runtimes/go:v1 go-runtime
             docker build -t localhost:5000/runtimes/node:v1 node-runtime
-            docker build -t localhost:5000/runtimes/python:v1 python-runtime
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
             echo "Runtime images built and pushed to local registry"
-      - name: Copy runtime binary to server
+      - name: Copy runtime-manager binary to server
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ vars.TARGET_PRIVATE_IP }}
@@ -232,7 +240,7 @@ jobs:
           host: ${{ vars.TARGET_PRIVATE_IP }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
-          source: "./artifacts/*.service"
+          source: "./artifacts/faas-engine.service,./artifacts/faas-proxy.service"
           target: "/tmp"
 
       - name: Deploy and restart service
@@ -242,42 +250,75 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            set -e
+            set -euxo pipefail
 
             echo "=== Starting Deployment ==="
+
+            # Create user if needed
+            if ! id "faas-engine" &>/dev/null; then
+              echo "=== Creating faas-engine user ==="
+              sudo useradd --system --no-create-home --shell /usr/sbin/nologin faas-engine
+            else
+              echo "User faas-engine already exists"
+            fi
+
+            # Ensure docker access
+            sudo usermod -aG docker faas-engine
+
+            echo "=== DEBUG: /tmp contents ==="
+            ls -l /tmp
+
+            echo "=== Validating artifacts ==="
+            [ -f /tmp/artifacts/runtime-manager ] || { echo "Missing runtime-manager"; exit 1; }
+            [ -f /tmp/artifacts/proxy ] || { echo "Missing proxy"; exit 1; }
+            [ -f /tmp/artifacts/faas-engine.service ] || { echo "Missing faas-engine service file"; exit 1; }
+            [ -f /tmp/artifacts/faas-proxy.service ] || { echo "Missing faas-proxy service file"; exit 1; }
 
             echo "=== Stopping existing services ==="
             sudo systemctl stop faas-engine || true
             sudo systemctl stop faas-proxy || true
 
-            echo "=== Ensuring required directories exist ==="
-            sudo mkdir -p /opt/faas-engine
-            sudo mkdir -p /backup/bin
-            sudo mkdir -p /backup/services
+            # Directories
+            sudo mkdir -p /opt/faas-engine /backup/bin /backup/services
 
             TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 
             echo "=== Backing up binaries ==="
-            [ -f /opt/faas-engine/runtime-manager ] && sudo cp /opt/faas-engine/runtime-manager /backup/bin/runtime-manager.$TIMESTAMP || true
-            [ -f /opt/faas-engine/proxy ] && sudo cp /opt/faas-engine/proxy /backup/bin/proxy.$TIMESTAMP || true
+            if [ -f /opt/faas-engine/runtime-manager ]; then
+              sudo cp /opt/faas-engine/runtime-manager \
+                /backup/bin/runtime-manager.$TIMESTAMP
+            fi
+            if [ -f /opt/faas-engine/proxy ]; then
+              sudo cp /opt/faas-engine/proxy \
+                /backup/bin/proxy.$TIMESTAMP
+            fi
+
+            echo "=== Backing up service files ==="
+            if [ -f /etc/systemd/system/faas-engine.service ]; then
+              sudo cp /etc/systemd/system/faas-engine.service \
+                /backup/services/faas-engine.service.$TIMESTAMP
+            fi
+            if [ -f /etc/systemd/system/faas-proxy.service ]; then
+              sudo cp /etc/systemd/system/faas-proxy.service \
+                /backup/services/faas-proxy.service.$TIMESTAMP
+            fi
 
             echo "=== Cleaning old binaries ==="
             sudo rm -f /opt/faas-engine/runtime-manager
             sudo rm -f /opt/faas-engine/proxy
 
-            echo "=== Deploying runtime binary ==="
+            echo "=== Deploying runtime-manager binary ==="
             sudo mv /tmp/artifacts/runtime-manager /opt/faas-engine/runtime-manager
             sudo chmod +x /opt/faas-engine/runtime-manager
+            sudo chown faas-engine:faas-engine /opt/faas-engine/runtime-manager
 
             echo "=== Deploying proxy binary ==="
             sudo mv /tmp/artifacts/proxy /opt/faas-engine/proxy
             sudo chmod +x /opt/faas-engine/proxy
+            sudo chown faas-engine:faas-engine /opt/faas-engine/proxy
 
-            echo "=== Applying port binding capability ==="
-            sudo setcap 'cap_net_bind_service=+ep' /opt/faas-engine/proxy
-
-            echo "=== Verifying capability ==="
-            getcap /opt/faas-engine/proxy
+            echo "=== Setting directory permissions ==="
+            sudo chmod 755 /opt/faas-engine
 
             echo "=== Deploying service files ==="
             sudo mv /tmp/artifacts/faas-engine.service /etc/systemd/system/faas-engine.service
@@ -285,8 +326,6 @@ jobs:
 
             echo "=== Reloading systemd ==="
             sudo systemctl daemon-reload
-
-            echo "=== Enabling services ==="
             sudo systemctl enable faas-engine
             sudo systemctl enable faas-proxy
 
@@ -294,18 +333,37 @@ jobs:
             sudo systemctl restart faas-engine
             sudo systemctl restart faas-proxy
 
-            echo "=== Checking runtime service ==="
+            echo "=== Checking services status ==="
             if ! sudo systemctl is-active --quiet faas-engine; then
-              echo "Runtime failed to start"
+              echo "faas-engine service failed to start"
               sudo journalctl -u faas-engine -n 50 --no-pager
+
+              echo "=== Attempting rollback ==="
+              LATEST_RUNTIME=$(ls -t /backup/bin/runtime-manager.* 2>/dev/null | head -n1)
+              if [ -n "$LATEST_RUNTIME" ]; then
+                sudo cp "$LATEST_RUNTIME" /opt/faas-engine/runtime-manager
+                sudo chmod +x /opt/faas-engine/runtime-manager
+                sudo chown faas-engine:faas-engine /opt/faas-engine/runtime-manager
+                sudo systemctl restart faas-engine
+                echo "Rollback attempted for runtime-manager"
+              fi
               exit 1
             fi
 
-            echo "=== Checking proxy service ==="
             if ! sudo systemctl is-active --quiet faas-proxy; then
-              echo "Proxy failed to start"
+              echo "faas-proxy service failed to start"
               sudo journalctl -u faas-proxy -n 50 --no-pager
+
+              echo "=== Attempting rollback ==="
+              LATEST_PROXY=$(ls -t /backup/bin/proxy.* 2>/dev/null | head -n1)
+              if [ -n "$LATEST_PROXY" ]; then
+                sudo cp "$LATEST_PROXY" /opt/faas-engine/proxy
+                sudo chmod +x /opt/faas-engine/proxy
+                sudo chown faas-engine:faas-engine /opt/faas-engine/proxy
+                sudo systemctl restart faas-proxy
+                echo "Rollback attempted for proxy"
+              fi
               exit 1
             fi
 
-            echo "=== Deployment Successful ==="
+            echo "=== All services deployed successfully ==="

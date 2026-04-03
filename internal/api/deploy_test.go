@@ -1,10 +1,9 @@
-package api_test
+package api
 
 import (
 	"bytes"
 	"context"
 	"errors"
-	"faas-engine-go/internal/api"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -51,7 +50,7 @@ func TestDeployHandler_InvalidSize(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := DeployHandler(&mockDeployer{})
 	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -86,7 +85,7 @@ func TestDeployHandler_Success(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := DeployHandler(&mockDeployer{})
 	handler(rr, req)
 
 	if rr.Code != http.StatusOK {
@@ -118,7 +117,7 @@ func TestDeployHandler_MissingFile(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{})
+	handler := DeployHandler(&mockDeployer{})
 	handler(rr, req)
 
 	if rr.Code != http.StatusBadRequest {
@@ -152,7 +151,7 @@ func TestDeployHandler_InternalError(t *testing.T) {
 
 	rr := httptest.NewRecorder()
 
-	handler := api.DeployHandler(&mockDeployer{shouldFail: true})
+	handler := DeployHandler(&mockDeployer{shouldFail: true})
 	handler(rr, req)
 
 	if rr.Code != http.StatusInternalServerError {

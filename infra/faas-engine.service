@@ -5,7 +5,7 @@ Requires=docker.service
 
 [Service]
 Type=simple
-User=ec2-user
+User=faas-engine
 ExecStart=/opt/faas-engine/runtime-manager
 Restart=always
 RestartSec=5
