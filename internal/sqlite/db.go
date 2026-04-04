@@ -125,18 +125,49 @@ func InitTables() error {
 			from_version TEXT,
 			to_version TEXT,
 			triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			cleanup_status TEXT DEFAULT 'pending',
+			cleanup_error TEXT,
 			FOREIGN KEY(function_id) REFERENCES functions(id)
 		);	`,
+
+		// VERSION_HISTORY: Add cleanup columns if they don't exist
+		`ALTER TABLE version_history ADD COLUMN cleanup_status TEXT DEFAULT 'pending';`,
+		`ALTER TABLE version_history ADD COLUMN cleanup_error TEXT;`,
+
+		// Fix #6: Add idempotency key for retry deduplication
+		// Prevents duplicate history entries when rollback is retried
+		`ALTER TABLE version_history ADD COLUMN request_id TEXT;`,
 
 		`CREATE INDEX IF NOT EXISTS idx_version_history_function_id
 		ON version_history(function_id);`,
 
 		`CREATE INDEX IF NOT EXISTS idx_version_history_triggered_at
 		ON version_history(triggered_at DESC);`,
+
+		// Fix #6: Unique index for idempotency - prevents duplicate entries on retry
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_version_history_idempotency
+		ON version_history(function_id, request_id) WHERE request_id IS NOT NULL;`,
+
+		// ROLLBACK_STACK: LIFO stack for version rollbacks
+		`CREATE TABLE IF NOT EXISTS rollback_stack (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			function_name TEXT NOT NULL,
+			version TEXT,
+			created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+		);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_rollback_stack_function_name
+		ON rollback_stack(function_name);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_rollback_stack_created_at
+		ON rollback_stack(function_name, created_at DESC);`,
 	}
 
 	for _, q := range queries {
 		if _, err := DB.Exec(q); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return err
 		}
 	}

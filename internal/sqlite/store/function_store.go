@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"faas-engine-go/internal/sqlite/models"
 	"fmt"
+	"log/slog"
 )
 
 const functionColumns = `
@@ -66,7 +67,48 @@ func scanFunctionFromRows(rows *sql.Rows) (*models.Function, error) {
 }
 
 func CreateFunction(db *sql.DB, fn *models.Function) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
 
+	// Check if this is a new version of an existing function
+	var existingActiveVersion string
+	var existingFunctionID int
+	err = tx.QueryRow(
+		"SELECT id, version FROM functions WHERE name=? AND status='active'",
+		fn.Name,
+	).Scan(&existingFunctionID, &existingActiveVersion)
+
+	// If function exists with active version, deactivate it and record transition
+	if err == nil {
+		// Record the deployment transition in version_history
+		// from_version = old active version, to_version = new version being deployed
+		result, err := tx.Exec(
+			`INSERT INTO version_history (function_id, from_version, to_version) 
+			 VALUES (?, ?, ?)`,
+			existingFunctionID, existingActiveVersion, fn.Version,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert version history: %w (from: %s, to: %s)", err, existingActiveVersion, fn.Version)
+		}
+		affected, _ := result.RowsAffected()
+		slog.Info("version_history recorded", "function", fn.Name, "from", existingActiveVersion, "to", fn.Version, "rows_affected", affected)
+
+		// Deactivate the previous version
+		_, err = tx.Exec(
+			"UPDATE functions SET status='inactive' WHERE id=?",
+			existingFunctionID,
+		)
+		if err != nil {
+			return fmt.Errorf("failed to deactivate previous version: %w", err)
+		}
+	} else if err != sql.ErrNoRows {
+		return fmt.Errorf("failed to check existing version: %w", err)
+	}
+
+	// Insert new version
 	query := `
 	INSERT INTO functions (
 		name,
@@ -79,7 +121,7 @@ func CreateFunction(db *sql.DB, fn *models.Function) error {
 		status
 	) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
 
-	_, err := db.Exec(
+	result, err := tx.Exec(
 		query,
 		fn.Name,
 		fn.Version,
@@ -90,8 +132,30 @@ func CreateFunction(db *sql.DB, fn *models.Function) error {
 		fn.Endpoint,
 		fn.Status,
 	)
+	if err != nil {
+		return fmt.Errorf("failed to insert new function version: %w", err)
+	}
+	_ = result // Result not used; kept for potential future audit logging
+	slog.Info("function version created", "function", fn.Name, "version", fn.Version)
 
-	return err
+	// Push newly created version to rollback stack for future rollback operations
+	// (inline to ensure it's part of the same transaction)
+	_, err = tx.Exec(
+		`INSERT INTO rollback_stack (function_name, version) 
+		 VALUES (?, ?)`,
+		fn.Name, fn.Version,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to push to rollback stack: %w", err)
+	}
+
+	// Commit transaction
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
+	}
+
+	slog.Info("CreateFunction completed successfully", "function", fn.Name, "version", fn.Version)
+	return nil
 }
 
 func GetFunction(db *sql.DB, name string) (*models.Function, error) {
@@ -277,67 +341,45 @@ func GetFunctionByNameAndVersion(db *sql.DB, name, version string) (*models.Func
 	return fn, err
 }
 
-// RollbackToVersion performs an atomic rollback to a specific version.
-// It deactivates the current active version and activates the target version,
-// then records the rollback event in version_history.
-func RollbackToVersion(db *sql.DB, functionName, targetVersion string) (string, error) {
+// GetPreviousVersion returns the previous version using id-based ordering (Fix #1, #2).
+// Since ids are auto-incrementing, they represent deployment order naturally.
+// Finds the version deployed immediately before the current active version.
+// Returns empty string if no previous version exists (first version case).
+func GetPreviousVersion(db *sql.DB, functionName string) (string, error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return "", fmt.Errorf("failed to begin transaction: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Get function ID and current active version
-	var functionID int
-	var currentVersion string
+	// Get current active version's ID (Fix #1: inside transaction for consistency)
+	var currentID int
 	err = tx.QueryRow(
-		"SELECT id, version FROM functions WHERE name=? AND status='active'",
+		"SELECT id FROM functions WHERE name=? AND status='active'",
 		functionName,
-	).Scan(&functionID, &currentVersion)
+	).Scan(&currentID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("no active version found for function")
+			return "", fmt.Errorf("no active version found")
 		}
 		return "", err
 	}
 
-	// Verify target version exists
-	var targetID int
+	// Find the version deployed before current using ID ordering (Fix #2)
+	// IDs are auto-incrementing and represent deployment order
+	// This prevents implicit ordering assumptions on ListFunctionVersions results
+	var previousVersion string
 	err = tx.QueryRow(
-		"SELECT id FROM functions WHERE name=? AND version=?",
-		functionName, targetVersion,
-	).Scan(&targetID)
+		`SELECT version FROM functions 
+		 WHERE name=? AND id < ? 
+		 ORDER BY id DESC 
+		 LIMIT 1`,
+		functionName, currentID,
+	).Scan(&previousVersion)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", fmt.Errorf("target version %s not found", targetVersion)
+			return "", nil // No previous version (first version)
 		}
-		return "", err
-	}
-
-	// Deactivate current version
-	_, err = tx.Exec(
-		"UPDATE functions SET status='inactive' WHERE name=? AND status='active'",
-		functionName,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	// Activate target version
-	_, err = tx.Exec(
-		"UPDATE functions SET status='active' WHERE id=?",
-		targetID,
-	)
-	if err != nil {
-		return "", err
-	}
-
-	// Record rollback in version_history
-	_, err = tx.Exec(
-		"INSERT INTO version_history (function_id, from_version, to_version) VALUES (?, ?, ?)",
-		functionID, currentVersion, targetVersion,
-	)
-	if err != nil {
 		return "", err
 	}
 
@@ -345,13 +387,160 @@ func RollbackToVersion(db *sql.DB, functionName, targetVersion string) (string, 
 		return "", err
 	}
 
-	return currentVersion, nil
+	return previousVersion, nil
+}
+
+// RollbackToVersion performs an atomic rollback to a specific version.
+// Returns: (previousVersion, functionID, error)
+// functionID is the ID of the function used in version_history for UpdateCleanupStatus (Fix #7).
+func RollbackToVersionWithID(db *sql.DB, functionName, targetVersion, requestID string) (string, int, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return "", 0, fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// STEP 1: Fetch current active version with lock (SERIALIZABLE isolation)
+	var functionID int
+	var currentVersion string
+	var currentID int
+	err = tx.QueryRow(
+		`SELECT id, version FROM functions 
+		 WHERE name=? AND status='active'`,
+		functionName,
+	).Scan(&currentID, &currentVersion)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", 0, fmt.Errorf("no active version found for function")
+		}
+		return "", 0, err
+	}
+
+	// Store currentID to track which function will be deactivated (for later UpdateCleanupStatus)
+	deactivatedFunctionID := currentID
+
+	// STEP 2: Determine target version
+	// CASE A: Explicit rollback (targetVersion provided)
+	if targetVersion != "" {
+		var targetID int
+		err = tx.QueryRow(
+			`SELECT id FROM functions 
+			 WHERE name=? AND version=? AND status='inactive'`,
+			functionName, targetVersion,
+		).Scan(&targetID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return "", 0, fmt.Errorf("target version %s not found or already active", targetVersion)
+			}
+			return "", 0, err
+		}
+		functionID = targetID
+	} else {
+		// CASE B: Implicit rollback (no version specified)
+		// Get previous version by created_at ordering (DESC to get most recent before current)
+		// CRITICAL: The ORDER BY created_at DESC is essential for correct behavior.
+		// If this ordering ever changes, the implicit rollback will silently select the wrong version.
+		// Always sort in DESC order to select the most recently created version before the current one.
+		var targetID int
+		err = tx.QueryRow(
+			`SELECT id FROM functions 
+			 WHERE name=? AND created_at < (
+			   SELECT created_at FROM functions WHERE id=?
+			 )
+			 ORDER BY created_at DESC 
+			 LIMIT 1`,
+			functionName, currentID,
+		).Scan(&targetID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return "", 0, fmt.Errorf("no previous version to rollback to")
+			}
+			return "", 0, err
+		}
+
+		// Get the version string
+		err = tx.QueryRow(
+			"SELECT version FROM functions WHERE id=?",
+			targetID,
+		).Scan(&targetVersion)
+		if err != nil {
+			return "", 0, err
+		}
+
+		functionID = targetID
+	}
+
+	// STEP 3: Update active version (atomically)
+	// Deactivate current
+	_, err = tx.Exec(
+		"UPDATE functions SET status='inactive' WHERE id=?",
+		currentID,
+	)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Activate target
+	_, err = tx.Exec(
+		"UPDATE functions SET status='active' WHERE id=?",
+		functionID,
+	)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// STEP 4: Record rollback history with idempotency key (Fix #6)
+	// Check if this request_id was already processed (idempotent retry)
+	if requestID != "" {
+		var existingID int
+		err = tx.QueryRow(
+			`SELECT id FROM version_history 
+			 WHERE function_id=? AND request_id=?`,
+			currentID, requestID,
+		).Scan(&existingID)
+
+		// If already exists, this is a retry - return success (idempotent)
+		if err == nil {
+			slog.Info("rollback idempotency: request already processed", "request_id", requestID)
+			return currentVersion, deactivatedFunctionID, nil
+		} else if err != sql.ErrNoRows {
+			return "", 0, err
+		}
+		// If ErrNoRows, continue with normal flow
+	}
+
+	// Insert new history entry with optional request_id for idempotency (Fix #6)
+	_, err = tx.Exec(
+		`INSERT INTO version_history (function_id, from_version, to_version, request_id) 
+		 VALUES (?, ?, ?, ?)`,
+		currentID, currentVersion, targetVersion, requestID,
+	)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// STEP 5: Commit atomically
+	if err = tx.Commit(); err != nil {
+		return "", 0, err
+	}
+
+	// Return previousVersion and deactivatedFunctionID for UpdateCleanupStatus (Fix #7)
+	return currentVersion, deactivatedFunctionID, nil
+}
+
+// RollbackToVersion is a wrapper for backward compatibility with the Store interface.
+// It calls RollbackToVersionWithID and returns only the version string, discarding the functionID.
+// Use RollbackToVersionWithID directly if you need the deactivatedFunctionID.
+func RollbackToVersion(db *sql.DB, functionName, targetVersion, requestID string) (string, error) {
+	version, _, err := RollbackToVersionWithID(db, functionName, targetVersion, requestID)
+	return version, err
 }
 
 // GetVersionHistory retrieves rollback history for a function.
 func GetVersionHistory(db *sql.DB, functionName string, limit int) ([]models.VersionHistory, error) {
 	query := `
-	SELECT v.id, v.function_id, v.from_version, v.to_version, v.triggered_at
+	SELECT v.id, v.function_id, v.from_version, v.to_version, v.triggered_at, 
+	       COALESCE(v.request_id, ''), COALESCE(v.cleanup_status, ''), COALESCE(v.cleanup_error, '')
 	FROM version_history v
 	JOIN functions f ON v.function_id = f.id
 	WHERE f.name = ?
@@ -368,7 +557,8 @@ func GetVersionHistory(db *sql.DB, functionName string, limit int) ([]models.Ver
 	var history []models.VersionHistory
 	for rows.Next() {
 		var vh models.VersionHistory
-		err := rows.Scan(&vh.ID, &vh.FunctionID, &vh.FromVersion, &vh.ToVersion, &vh.TriggeredAt)
+		err := rows.Scan(&vh.ID, &vh.FunctionID, &vh.FromVersion, &vh.ToVersion, &vh.TriggeredAt,
+			&vh.RequestID, &vh.CleanupStatus, &vh.CleanupError)
 		if err != nil {
 			return nil, err
 		}
@@ -376,4 +566,90 @@ func GetVersionHistory(db *sql.DB, functionName string, limit int) ([]models.Ver
 	}
 
 	return history, nil
+}
+
+// UpdateCleanupStatus updates the cleanup status and error for a specific rollback entry.
+// Called after async cleanup completes to persist the final status to the database (Fix #7).
+func UpdateCleanupStatus(db *sql.DB, functionID int, requestID string, status, errMsg string) error {
+	query := `
+	UPDATE version_history 
+	SET cleanup_status = ?, cleanup_error = ?
+	WHERE function_id = ? AND request_id = ?
+	`
+
+	_, err := db.Exec(query, status, errMsg, functionID, requestID)
+	return err
+}
+
+// PushRollbackStack adds a version to the rollback stack (LIFO).
+// Called when a version is deployed or explicitly rolled back to.
+// Allows duplicate (function_name, version) pairs so that each push
+// creates a new row with updated created_at for LIFO ordering.
+func PushRollbackStack(db *sql.DB, functionName string, version string) error {
+	_, err := db.Exec(
+		`INSERT INTO rollback_stack (function_name, version) 
+		 VALUES (?, ?)`,
+		functionName, version,
+	)
+	return err
+}
+
+// PopRollbackStack removes and returns the top version from the rollback stack.
+// Used when rollback is called without a target version.
+func PopRollbackStack(db *sql.DB, functionName string) (string, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	// Get the top version (most recently added)
+	var versionID int
+	var version string
+	err = tx.QueryRow(
+		`SELECT id, version FROM rollback_stack 
+		 WHERE function_name=? 
+		 ORDER BY created_at DESC 
+		 LIMIT 1`,
+		functionName,
+	).Scan(&versionID, &version)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no versions in rollback stack")
+		}
+		return "", err
+	}
+
+	// Remove the top version
+	_, err = tx.Exec("DELETE FROM rollback_stack WHERE id=?", versionID)
+	if err != nil {
+		return "", err
+	}
+
+	if err = tx.Commit(); err != nil {
+		return "", err
+	}
+
+	return version, nil
+}
+
+// GetNextRollbackVersion returns the next version in the rollback stack without removing it.
+// This is the version that would be used if rollback is called without a target.
+func GetNextRollbackVersion(db *sql.DB, functionName string) (string, error) {
+	var version string
+	err := db.QueryRow(
+		`SELECT version FROM rollback_stack 
+		 WHERE function_name=? 
+		 ORDER BY created_at DESC 
+		 LIMIT 1`,
+		functionName,
+	).Scan(&version)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return "", fmt.Errorf("no versions in rollback stack")
+		}
+		return "", err
+	}
+
+	return version, nil
 }

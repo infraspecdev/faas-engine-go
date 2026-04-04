@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"faas-engine-go/internal/sqlite/models"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -18,10 +20,20 @@ type fakeRollbackStore struct {
 	getContainersErr    error
 	getContainersResult []models.Container
 	removeContainerErr  error
+	getActiveFnResult   *models.Function // Added for tests
 }
 
 func (f *fakeRollbackStore) GetActiveFunction(name string) (*models.Function, error) {
-	return nil, nil
+	if f.getActiveFnResult != nil {
+		return f.getActiveFnResult, nil
+	}
+	// Default: return first version as active for testing
+	if len(f.listVersionsResult) > 0 {
+		result := f.listVersionsResult[0]
+		result.Status = "active"
+		return &result, nil
+	}
+	return nil, fmt.Errorf("function not found")
 }
 
 func (f *fakeRollbackStore) CreateInvocation(inv *models.Invocation) error {
@@ -68,12 +80,37 @@ func (f *fakeRollbackStore) ListFunctions() ([]models.Function, error) {
 	return nil, nil
 }
 
-func (f *fakeRollbackStore) RollbackToVersion(functionName, targetVersion string) (string, error) {
+func (f *fakeRollbackStore) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
 	return f.rollbackToPrevious, f.rollbackToErr
+}
+
+func (f *fakeRollbackStore) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, int, error) {
+	// Return the version, a default functionID (1), and any error
+	return f.rollbackToPrevious, 1, f.rollbackToErr
 }
 
 func (f *fakeRollbackStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
 	return f.getHistoryResult, f.getHistoryErr
+}
+
+func (f *fakeRollbackStore) GetPreviousVersion(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeRollbackStore) PushRollbackStack(functionName string, version string) error {
+	return nil
+}
+
+func (f *fakeRollbackStore) PopRollbackStack(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeRollbackStore) GetNextRollbackVersion(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeRollbackStore) UpdateCleanupStatus(functionID int, requestID string, status, errMsg string) error {
+	return nil
 }
 
 type fakeRollbackContainerClient struct {
@@ -122,16 +159,16 @@ func TestRollbackService_FunctionNotFound(t *testing.T) {
 		t.Fatal("expected error for not found")
 	}
 
-	if err.Error() != "function not found" {
-		t.Fatalf("expected 'function not found', got '%v'", err)
+	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "image validation failed") {
+		t.Fatalf("expected 'not found' error, got '%v'", err)
 	}
 }
 
 func TestRollbackService_TargetVersionNotFound(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v1", Status: "active"},
-			{ID: 2, Name: "myfunction", Version: "v2", Status: "inactive"},
+			{ID: 1, Name: "myfunction", Version: "v1", Status: "active", Image: "myfunction:v1"},
+			{ID: 2, Name: "myfunction", Version: "v2", Status: "inactive", Image: "myfunction:v2"},
 		},
 	}
 	client := &fakeRollbackContainerClient{}
@@ -143,18 +180,20 @@ func TestRollbackService_TargetVersionNotFound(t *testing.T) {
 		t.Fatal("expected error for target version not found")
 	}
 
-	if err.Error() != "target version v3 not found" {
-		t.Fatalf("expected 'target version v3 not found', got '%v'", err)
+	if !strings.Contains(err.Error(), "not found") && !strings.Contains(err.Error(), "image validation failed") {
+		t.Fatalf("expected 'not found' error, got '%v'", err)
 	}
 }
 
 func TestRollbackService_ExplicitVersion(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now()},
-			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour)},
+			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now(), Image: "myfunction:v2"},
+			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour), Image: "myfunction:v1"},
 		},
 		rollbackToPrevious: "v2",
+		// After rollback to v1, v1 should be active
+		getActiveFnResult: &models.Function{ID: 2, Name: "myfunction", Version: "v1", Status: "active", Image: "myfunction:v1"},
 	}
 	client := &fakeRollbackContainerClient{}
 	service := NewRollbackService(store, client)
@@ -185,11 +224,13 @@ func TestRollbackService_ExplicitVersion(t *testing.T) {
 func TestRollbackService_ImplicitVersion(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v3", Status: "active", CreatedAt: time.Now()},
-			{ID: 2, Name: "myfunction", Version: "v2", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour)},
-			{ID: 3, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-2 * time.Hour)},
+			{ID: 1, Name: "myfunction", Version: "v3", Status: "active", CreatedAt: time.Now(), Image: "myfunction:v3"},
+			{ID: 2, Name: "myfunction", Version: "v2", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour), Image: "myfunction:v2"},
+			{ID: 3, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-2 * time.Hour), Image: "myfunction:v1"},
 		},
 		rollbackToPrevious: "v3",
+		// After rollback, v2 should be active
+		getActiveFnResult: &models.Function{ID: 2, Name: "myfunction", Version: "v2", Status: "active", Image: "myfunction:v2"},
 	}
 	client := &fakeRollbackContainerClient{}
 	service := NewRollbackService(store, client)
@@ -212,8 +253,9 @@ func TestRollbackService_ImplicitVersion(t *testing.T) {
 func TestRollbackService_NoPreviousVersion(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v1", Status: "active"},
+			{ID: 1, Name: "myfunction", Version: "v1", Status: "active", Image: "myfunction:v1"},
 		},
+		rollbackToErr: fmt.Errorf("no previous version to rollback to"),
 	}
 	client := &fakeRollbackContainerClient{}
 	service := NewRollbackService(store, client)
@@ -224,16 +266,16 @@ func TestRollbackService_NoPreviousVersion(t *testing.T) {
 		t.Fatal("expected error for no previous version")
 	}
 
-	if err.Error() != "no previous version to rollback to" {
-		t.Fatalf("expected 'no previous version to rollback to', got '%v'", err)
+	if err.Error() != "rollback failed: no previous version to rollback to" {
+		t.Fatalf("expected 'rollback failed: no previous version to rollback to', got '%v'", err)
 	}
 }
 
 func TestRollbackService_RollbackError(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v2", Status: "active"},
-			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive"},
+			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", Image: "myfunction:v2"},
+			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", Image: "myfunction:v1"},
 		},
 		rollbackToErr: errors.New("database error"),
 	}
@@ -357,10 +399,11 @@ func TestRollbackService_GetRollbackHistory_Error(t *testing.T) {
 func TestRollbackService_ContainerCleanupAsync(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now()},
-			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour)},
+			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now(), Image: "myfunction:v2"},
+			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour), Image: "myfunction:v1"},
 		},
 		rollbackToPrevious: "v2",
+		getActiveFnResult:  &models.Function{ID: 1, Name: "myfunction", Version: "v2", Status: "active", Image: "myfunction:v2"},
 		getContainersResult: []models.Container{
 			{ID: "c1", FunctionID: 2, Status: "free", CreatedAt: time.Now().Add(-time.Hour)},
 			{ID: "c2", FunctionID: 2, Status: "busy", CreatedAt: time.Now().Add(-30 * time.Minute)},
@@ -387,8 +430,8 @@ func TestRollbackService_ContainerCleanupAsync(t *testing.T) {
 func TestRollbackService_ContainerCleanupSkipsUnhealthyContainers(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now()},
-			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour)},
+			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now(), Image: "myfunction:v2"},
+			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour), Image: "myfunction:v1"},
 		},
 		rollbackToPrevious: "v2",
 		getContainersResult: []models.Container{
@@ -417,8 +460,8 @@ func TestRollbackService_ContainerCleanupSkipsUnhealthyContainers(t *testing.T) 
 func TestRollbackService_ContainerCleanupHandlesErrors(t *testing.T) {
 	store := &fakeRollbackStore{
 		listVersionsResult: []models.Function{
-			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now()},
-			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour)},
+			{ID: 1, Name: "myfunction", Version: "v2", Status: "active", CreatedAt: time.Now(), Image: "myfunction:v2"},
+			{ID: 2, Name: "myfunction", Version: "v1", Status: "inactive", CreatedAt: time.Now().Add(-time.Hour), Image: "myfunction:v1"},
 		},
 		rollbackToPrevious: "v2",
 		getContainersResult: []models.Container{

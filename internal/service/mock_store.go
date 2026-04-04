@@ -86,12 +86,37 @@ func (f *fakeStore) DeleteFunction(name string) error {
 	return nil
 }
 
-func (f *fakeStore) RollbackToVersion(functionName, targetVersion string) (string, error) {
+func (f *fakeStore) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
 	return "v1", nil
+}
+
+func (f *fakeStore) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, int, error) {
+	// Return version, a default functionID (1), and no error for testing
+	return "v1", 1, nil
 }
 
 func (f *fakeStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
 	return []models.VersionHistory{}, nil
+}
+
+func (f *fakeStore) GetPreviousVersion(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) PushRollbackStack(functionName string, version string) error {
+	return nil
+}
+
+func (f *fakeStore) PopRollbackStack(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) GetNextRollbackVersion(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) UpdateCleanupStatus(functionID int, requestID string, status, errMsg string) error {
+	return nil
 }
 
 type fakeContainerClient struct {

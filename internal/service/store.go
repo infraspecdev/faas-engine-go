@@ -28,8 +28,17 @@ type Store interface {
 	ListFunctionVersions(name string) ([]models.Function, error)
 	DeleteFunction(name string) error
 	ListFunctions() ([]models.Function, error)
-	RollbackToVersion(functionName, targetVersion string) (string, error)
+	// RollbackToVersionWithID performs atomic rollback and returns (previousVersion, deactivatedFunctionID, error)
+	// The deactivatedFunctionID is needed for UpdateCleanupStatus to track cleanup results correctly (Fix #7)
+	RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, int, error)
+	RollbackToVersion(functionName, targetVersion, requestID string) (string, error) // Fix #6: requestID for idempotency
+	GetPreviousVersion(functionName string) (string, error)                          // Fix #1, #2: Get previous version by id ordering
 	GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error)
+	// Rollback stack operations (LIFO for version management)
+	PushRollbackStack(functionName string, version string) error
+	PopRollbackStack(functionName string) (string, error)
+	GetNextRollbackVersion(functionName string) (string, error)
+	UpdateCleanupStatus(functionID int, requestID string, status, errMsg string) error // Fix #7: Persist cleanup results
 }
 
 type realStore struct {
@@ -105,10 +114,34 @@ func (s *realStore) ListFunctions() ([]models.Function, error) {
 	return sqlstore.ListFunctions(s.db)
 }
 
-func (s *realStore) RollbackToVersion(functionName, targetVersion string) (string, error) {
-	return sqlstore.RollbackToVersion(s.db, functionName, targetVersion)
+func (s *realStore) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, int, error) {
+	return sqlstore.RollbackToVersionWithID(s.db, functionName, targetVersion, requestID)
+}
+
+func (s *realStore) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
+	return sqlstore.RollbackToVersion(s.db, functionName, targetVersion, requestID)
+}
+
+func (s *realStore) GetPreviousVersion(functionName string) (string, error) {
+	return sqlstore.GetPreviousVersion(s.db, functionName)
 }
 
 func (s *realStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
 	return sqlstore.GetVersionHistory(s.db, functionName, limit)
+}
+
+func (s *realStore) PushRollbackStack(functionName string, version string) error {
+	return sqlstore.PushRollbackStack(s.db, functionName, version)
+}
+
+func (s *realStore) PopRollbackStack(functionName string) (string, error) {
+	return sqlstore.PopRollbackStack(s.db, functionName)
+}
+
+func (s *realStore) GetNextRollbackVersion(functionName string) (string, error) {
+	return sqlstore.GetNextRollbackVersion(s.db, functionName)
+}
+
+func (s *realStore) UpdateCleanupStatus(functionID int, requestID string, status, errMsg string) error {
+	return sqlstore.UpdateCleanupStatus(s.db, functionID, requestID, status, errMsg)
 }
