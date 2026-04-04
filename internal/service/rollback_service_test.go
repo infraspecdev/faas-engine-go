@@ -97,18 +97,6 @@ func (f *fakeRollbackStore) GetPreviousVersion(functionName string) (string, err
 	return "", nil
 }
 
-func (f *fakeRollbackStore) PushRollbackStack(functionName string, version string) error {
-	return nil
-}
-
-func (f *fakeRollbackStore) PopRollbackStack(functionName string) (string, error) {
-	return "", nil
-}
-
-func (f *fakeRollbackStore) GetNextRollbackVersion(functionName string) (string, error) {
-	return "", nil
-}
-
 func (f *fakeRollbackStore) UpdateCleanupStatus(functionID int, requestID string, status, errMsg string) error {
 	return nil
 }

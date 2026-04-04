@@ -17,59 +17,10 @@ type ContainerClient interface {
 	StopContainer(ctx context.Context, containerID string) error
 }
 
-// RollbackService handles function version rollback operations with support for atomicity,
-// idempotency, rate limiting, and safe async cleanup.
-//
-// DESIGN & FIXES IMPLEMENTED:
-// ============================
-// Fix #1: Race condition between version selection and rollback
-//   - SOLUTION: All version selection happens inside RollbackToVersion() DB transaction
-//   - Previous version is determined and switched atomically
-//   - No external ListFunctionVersions() call that could race with concurrent deploys
-//
-// Fix #2: Implicit rollback ordering assumption
-//   - SOLUTION: ORDER BY created_at DESC is explicitly enforced in SQL query
-//   - Comment in query clarifies the ordering is critical and must not be changed
-//   - Query has LIMIT 1 to select newest version created before current active version
-//
-// Fix #3: Async cleanup can kill in-flight requests
-//   - SOLUTION: Cleanup only targets "free" containers; "busy" containers are skipped
-//   - Busy containers continue handling requests and are cleaned by idle timeout worker
-//   - Only after in-flight work completes will containers be cleaned
-//
-// Fix #4: No rollback limit / cooldown
-//   - SOLUTION: RollbackService tracks lastRollback time per function
-//   - Enforces configurable rollbackCooldown between successive rollbacks
-//   - Prevents rapid version churn that could destabilize the system
-//
-// Fix #5: History limit has no upper bound
-//   - SOLUTION: API handler enforces maxLimit=1000 before calling service
-//   - Service layer also enforces maxLimit as defense-in-depth
-//   - Prevents DOS attacks via unbounded ?limit parameter
-//
-// Fix #6: Duplicate history entries on retry
-//   - SOLUTION: Idempotency key (request_id) prevents duplicate history entries
-//   - If retry uses same request_id, operation is a no-op (returns early)
-//   - Unique index on (function_id, request_id) prevents duplicates at DB level
-//
-// Fix #7: Cleanup errors are silently swallowed
-//   - SOLUTION: Cleanup errors are captured and stored in RollbackResult
-//   - CleanupStatus tracks state: "pending"|"completed"|"failed"
-//   - CleanupError includes error message for debugging
-//
-// Fix #8: No validation that target version image exists in registry
-//   - SOLUTION: validateImageExists() checks image value is not empty in DB
-//   - Called before rollback to fail fast if image is missing
-//   - Prevents orphaned version switches with missing images
-//
-// Fix #9: Rollback API returns 200 before cleanup finishes
-//   - SOLUTION: Response includes cleanup_status field with real-time status
-//   - Client can check this field or poll cleanup endpoint
-//   - Cleanup happens async; success is independent of rollback API response
 type RollbackService struct {
 	store            Store
 	containerClient  ContainerClient
-	lastRollback     map[string]time.Time // Fix #4: Rate limiting
+	lastRollback     map[string]time.Time
 	mu               sync.Mutex
 	rollbackCooldown time.Duration
 }
@@ -79,7 +30,7 @@ func NewRollbackService(s Store, c ContainerClient) *RollbackService {
 		store:            s,
 		containerClient:  c,
 		lastRollback:     make(map[string]time.Time),
-		rollbackCooldown: 0, // Disabled for testing
+		rollbackCooldown: 5 * time.Second,
 	}
 }
 
@@ -88,9 +39,9 @@ type RollbackResult struct {
 	PreviousVersion string    `json:"previous_version"`
 	CurrentVersion  string    `json:"current_version"`
 	RolledBackAt    time.Time `json:"rolled_back_at"`
-	CleanupStatus   string    `json:"cleanup_status"` // Fix #7, #9: "pending"|"completed"|"failed"
+	CleanupStatus   string    `json:"cleanup_status"`
 	CleanupError    string    `json:"cleanup_error,omitempty"`
-	RequestID       string    `json:"request_id"` // Fix #6: For idempotency verification
+	RequestID       string    `json:"request_id"`
 }
 
 // Rollback reverts a function to a specific version.
@@ -104,7 +55,6 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 		return nil, fmt.Errorf("function name is required")
 	}
 
-	// Fix #4: Check rate limit
 	rs.mu.Lock()
 	lastTime := rs.lastRollback[functionName]
 	rs.mu.Unlock()
@@ -115,20 +65,18 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 
 	// Validate explicit rollback target if provided
 	if targetVersion != "" {
-		// Fix #8: Validate image exists before attempting rollback
 		err := rs.validateImageExists(ctx, functionName, targetVersion)
 		if err != nil {
 			return nil, fmt.Errorf("image validation failed: %w", err)
 		}
 	}
 
-	// Fix #6: Generate idempotency key for retry deduplication
 	requestID := uuid.New().String()
 
 	// All rollback logic happens inside RollbackToVersionWithID transaction
 	// This ensures atomicity and prevents race conditions
 	// RollbackToVersionWithID returns the deactivatedFunctionID (the ID of the old version)
-	// which we need for UpdateCleanupStatus (Fix #7) to correctly track cleanup results
+	// which we need for UpdateCleanupStatus to correctly track cleanup results
 	previousVersion, deactivatedFunctionID, err := rs.store.RollbackToVersionWithID(functionName, targetVersion, requestID)
 	if err != nil {
 		return nil, fmt.Errorf("rollback failed: %w", err)
@@ -140,23 +88,19 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 		return nil, fmt.Errorf("failed to get active function after rollback: %w", err)
 	}
 
-	// Fix #4: Record rollback time for rate limiting
 	rs.mu.Lock()
 	rs.lastRollback[functionName] = time.Now()
 	rs.mu.Unlock()
 
-	// Fix #9: Return with pending cleanup status
 	result := &RollbackResult{
 		FunctionName:    functionName,
 		PreviousVersion: previousVersion,
 		CurrentVersion:  currentFunc.Version,
 		RolledBackAt:    time.Now(),
 		CleanupStatus:   "pending",
-		RequestID:       requestID, // Fix #6: Include request ID for idempotency verification
+		RequestID:       requestID,
 	}
 
-	// Fix #3, #7: Cleanup old containers asynchronously; only FREE containers
-	// Fix #7: Persist cleanup status to database for query-able audit trail
 	go func() {
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
@@ -173,7 +117,6 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 			slog.Info("cleanup completed", "function", functionName, "version", previousVersion)
 		}
 
-		// Fix #7: CRITICAL - Persist cleanup status to database with CORRECT functionID
 		// Use deactivatedFunctionID (the ID of the old version from the transaction result)
 		// NOT currentFunc.ID (the ID of the new active version)
 		if err := rs.store.UpdateCleanupStatus(deactivatedFunctionID, requestID, status, errMsg); err != nil {
@@ -195,9 +138,9 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 	return result, nil
 }
 
-// cleanupOldContainers removes only FREE containers from the previous version (Fix #3).
+// cleanupOldContainers removes only FREE containers from the previous version
 // BUSY containers are left alone to finish in-flight requests.
-// Returns error if cleanup fails (Fix #7).
+// Returns error if cleanup fails
 // Note: This function is called asynchronously; errors do not block rollback completion.
 // Cleanup status is tracked and returned in the RollbackResult.
 func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionName, previousVersion string) error {
@@ -225,7 +168,6 @@ func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionNam
 
 	var lastErr error
 	for _, c := range containers {
-		// Fix #3: Only cleanup FREE containers; skip BUSY to preserve in-flight requests
 		if c.Status == "free" {
 			slog.Info("cleanup: removing free container", "container_id", c.ID, "version", previousVersion)
 
@@ -254,7 +196,7 @@ func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionNam
 	return nil
 }
 
-// validateImageExists checks if target version image exists in DB (Fix #8).
+// validateImageExists checks if target version image exists in DB .
 func (rs *RollbackService) validateImageExists(ctx context.Context, functionName, targetVersion string) error {
 	versions, err := rs.store.ListFunctionVersions(functionName)
 	if err != nil {
@@ -286,7 +228,7 @@ func (rs *RollbackService) validateImageExists(ctx context.Context, functionName
 }
 
 // GetRollbackHistory returns the rollback history for a function.
-// Enforces max limit of 1000 to prevent DOS (Fix #5).
+// Enforces max limit of 1000 to prevent DOS.
 func (rs *RollbackService) GetRollbackHistory(functionName string, limit int) ([]map[string]interface{}, error) {
 	const (
 		defaultLimit = 20

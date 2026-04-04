@@ -14,7 +14,7 @@ import (
 
 type RollbackRequest struct {
 	TargetVersion string `json:"target_version,omitempty"`
-	RequestID     string `json:"request_id,omitempty"` // Fix #6: Optional idempotency key for client-provided deduplication
+	RequestID     string `json:"request_id,omitempty"`
 }
 
 type Roller interface {
@@ -22,18 +22,6 @@ type Roller interface {
 	GetRollbackHistory(functionName string, limit int) ([]map[string]interface{}, error)
 }
 
-// RollbackHandler handles HTTP requests to rollback a function to a previous version.
-// POST /functions/{functionName}/rollback
-// Body: { "target_version": "v1", "request_id": "..." } or empty for previous version
-//
-// FIXES:
-// - Fix #1: Previous version is determined inside DB transaction (no race condition)
-// - Fix #2: Implicit rollback ordering is enforced with ORDER BY created_at DESC
-// - Fix #3: Only FREE containers are cleaned up; BUSY containers are preserved
-// - Fix #4: Rate limiting prevent rapid rollback churn
-// - Fix #6: Idempotent retries with request_id prevent duplicate history entries
-// - Fix #8: Target version image existence is validated before rollback
-// - Fix #9: Response includes cleanup_status ('pending'|'completed'|'failed')
 func RollbackHandler(roller Roller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -69,7 +57,7 @@ func RollbackHandler(roller Roller) http.HandlerFunc {
 
 // RollbackHistoryHandler handles HTTP requests to fetch rollback history.
 // GET /functions/{functionName}/history?limit=20
-// Fix #5: Enforces max history limit of 1000 to prevent DOS attacks.
+// Enforces max history limit of 1000 to prevent DOS attacks.
 func RollbackHistoryHandler(roller Roller) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -88,7 +76,7 @@ func RollbackHistoryHandler(roller Roller) http.HandlerFunc {
 		if l := r.URL.Query().Get("limit"); l != "" {
 			if parsed, err := strconv.Atoi(l); err == nil && parsed > 0 {
 				limit = parsed
-				// Enforce max limit at API layer (Fix #5: prevent DOS)
+				// Enforce max limit at API layer
 				if limit > maxLimit {
 					limit = maxLimit
 				}
