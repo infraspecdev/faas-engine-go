@@ -1,4 +1,4 @@
-#define VERSION "0.0.0"  ; 
+#define VERSION "0.0.0"  ; fallback if not passed
 
 [Setup]
 AppName=Nimbus CLI
@@ -22,7 +22,6 @@ procedure CurStepChanged(CurStep: TSetupStep);
 var
   Path: string;
   NewPath: string;
-  ResultCode: Integer;
 begin
   if CurStep = ssPostInstall then
   begin
@@ -36,10 +35,6 @@ begin
           NewPath := ExpandConstant('{app}');
 
         RegWriteStringValue(HKEY_CURRENT_USER, 'Environment', 'Path', NewPath);
-
-        { Refresh environment variables immediately }
-        SendMessageTimeout(HWND_BROADCAST, WM_SETTINGCHANGE, 0,
-          Integer(PChar('Environment')), SMTO_ABORTIFHUNG, 5000, ResultCode);
       end;
     end;
 
