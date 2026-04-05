@@ -48,18 +48,13 @@ func (d *DockerClient) PullImage(ctx context.Context, imageName string) error {
 }
 
 // BuildImage builds a Docker image using the provided tar build context.
-// It validates that the image if name does not already exist before building.
+// It overwrites any existing image with the same name.
 func (d *DockerClient) BuildImage(
 	ctx context.Context,
 	imageName string,
 	tarfile io.Reader,
 	out io.Writer,
 ) error {
-
-	err := d.CheckImageName(ctx, imageName)
-	if err != nil {
-		return fmt.Errorf("failed to check image name: %w", err)
-	}
 
 	image, err := d.cli.ImageBuild(ctx, tarfile, client.ImageBuildOptions{
 		Tags:        []string{imageName},
@@ -130,24 +125,18 @@ func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 
 	// Only include registry auth for non-localhost registries.
 	// localhost:5000 doesn't require authentication.
-	isLocalRegistry := strings.HasPrefix(registry, "localhost") ||
-		strings.HasPrefix(registry, "127.0.0.1")
-
-	if !isLocalRegistry && username != "" && password != "" {
-		auth := map[string]string{
-			"username":      username,
-			"password":      password,
-			"serveraddress": registry,
-		}
-
-		authJSON, err := json.Marshal(auth)
-		if err != nil {
-			return fmt.Errorf("failed to marshal registry auth: %w", err)
-		}
-
-		opts.RegistryAuth = base64.StdEncoding.EncodeToString(authJSON)
+	auth := map[string]string{
+		"username":      username,
+		"password":      password,
+		"serveraddress": registry,
 	}
 
+	authJSON, err := json.Marshal(auth)
+	if err != nil {
+		return fmt.Errorf("failed to marshal registry auth: %w", err)
+	}
+
+	opts.RegistryAuth = base64.StdEncoding.EncodeToString(authJSON)
 	imagePush, err := d.cli.ImagePush(ctx, target, opts)
 	if err != nil {
 		return fmt.Errorf("failed to push image: %w", err)
