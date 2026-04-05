@@ -25,18 +25,12 @@ func ImageRef(namespace, name, tag string) string {
 // RegistryUsername returns the configured registry username, if any.
 func RegistryUsername() string {
 	username := os.Getenv("REGISTRY_USERNAME")
-	if username == "" {
-		return ""
-	}
 	return username
 }
 
 // RegistryPassword returns the configured registry password, if any.
 func RegistryPassword() string {
 	password := os.Getenv("REGISTRY_PASSWORD")
-	if password == "" {
-		return ""
-	}
 	return password
 }
 
