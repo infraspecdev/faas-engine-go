@@ -54,6 +54,21 @@ func (m *mockStoreForLogs) GetContainersByFunction(functionID string) ([]models.
 }
 func (m *mockStoreForLogs) DeleteFunction(name string) error          { return nil }
 func (m *mockStoreForLogs) ListFunctions() ([]models.Function, error) { return nil, nil }
+func (m *mockStoreForLogs) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
+	return "", nil
+}
+func (m *mockStoreForLogs) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, string, error) {
+	return "", "", nil
+}
+func (m *mockStoreForLogs) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
+	return nil, nil
+}
+func (m *mockStoreForLogs) GetPreviousVersion(functionName string) (string, error) {
+	return "", nil
+}
+func (m *mockStoreForLogs) UpdateCleanupStatus(functionID string, requestID string, status, errMsg string) error {
+	return nil
+}
 
 func TestGetLogsByName_Success(t *testing.T) {
 	mock := &mockStoreForLogs{

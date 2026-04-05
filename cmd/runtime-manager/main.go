@@ -62,7 +62,7 @@ func main() {
 
 	invokeService := service.NewInvokeService(docker, docker, store)
 
-	scheduler := service.NewSchedulerService(invokeService)
+	scheduler := service.NewSchedulerService(invokeService, db)
 
 	if err := scheduler.LoadSchedules(); err != nil {
 		slog.Error("failed to load schedules", "error", err)
@@ -77,15 +77,18 @@ func main() {
 	logStreamService := service.NewLogStreamService(docker, store)
 
 	registryClient := &service.HTTPRegistryClient{}
-	deleteService := service.NewFunctionDeleteService(store, registryClient)
+	deleteService := service.NewFunctionDeleteService(store, registryClient, docker)
 
 	listService := service.NewListService(store)
+
+	rollbackService := service.NewRollbackService(store, docker)
 
 	r.HandleFunc("/functions", api.ListFunctionsHandler(listService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/logs", api.LogHandler(logService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/logs/stream", api.LogStreamHandler(logStreamService)).Methods("GET")
 	r.HandleFunc("/functions/{functionName}/versions", api.FunctionVersionsHandler(functionVersionService)).Methods("GET")
-
+	r.HandleFunc("/functions/{functionName}/rollback", api.RollbackHandler(rollbackService)).Methods("POST")
+	r.HandleFunc("/functions/{functionName}/history", api.RollbackHistoryHandler(rollbackService)).Methods("GET")
 	r.HandleFunc("/functions", api.DeployHandler(deployService, functionStore)).Methods("POST")
 	r.HandleFunc("/functions/{functionName}/invoke", api.InvokeHandler(invokeService)).Methods("POST")
 
@@ -93,6 +96,7 @@ func main() {
 
 	r.HandleFunc("/schedules/{functionName}", api.CreateScheduleHandler(scheduler)).Methods("POST")
 	r.HandleFunc("/schedules", api.ListSchedulesHandler()).Methods("GET")
+	r.HandleFunc("/schedules", api.DeleteScheduleHandler(scheduler)).Methods("DELETE")
 	r.HandleFunc("/schedules/{id}", api.DeleteScheduleHandler(scheduler)).Methods("DELETE")
 	// Create server instance
 	srv := &http.Server{

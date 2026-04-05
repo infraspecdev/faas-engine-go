@@ -2,8 +2,8 @@ package service
 
 import (
 	"context"
+	"database/sql"
 	"faas-engine-go/internal/core"
-	"faas-engine-go/internal/sqlite"
 	"faas-engine-go/internal/sqlite/models"
 	"faas-engine-go/internal/sqlite/store"
 	"log/slog"
@@ -15,18 +15,20 @@ import (
 type SchedulerService struct {
 	cron               *cron.Cron
 	invoker            core.Invoker
+	db                 *sql.DB                  // injected database connection
 	entries            map[string]cron.EntryID  // scheduleID → entryID
 	scheduleSemaphores map[string]chan struct{} // scheduleID → semaphore (per-schedule concurrency guard)
 	semaphoreMu        sync.Mutex               // protects scheduleSemaphores map
 }
 
-func NewSchedulerService(invoker core.Invoker) *SchedulerService {
+func NewSchedulerService(invoker core.Invoker, db *sql.DB) *SchedulerService {
 	// Configure cron to accept 6-field format (with seconds) to match API validation
 	// This ensures schedules loaded from DB are registered correctly
 	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 	return &SchedulerService{
 		cron:               cron.New(cron.WithParser(parser)),
 		invoker:            invoker,
+		db:                 db,
 		entries:            make(map[string]cron.EntryID),
 		scheduleSemaphores: make(map[string]chan struct{}),
 	}
@@ -47,11 +49,7 @@ func (s *SchedulerService) Stop() {
 // ---------- LOAD FROM DB ----------
 func (s *SchedulerService) LoadSchedules() error {
 
-	db, err := sqlite.InitDB()
-	if err != nil {
-		return err
-	}
-	schedules, err := store.ListSchedules(db)
+	schedules, err := store.ListSchedules(s.db)
 	if err != nil {
 		return err
 	}
@@ -59,7 +57,7 @@ func (s *SchedulerService) LoadSchedules() error {
 	var orphanedCount int
 	for _, sch := range schedules {
 		// Validate that the function still exists before registering the schedule
-		fn, err := store.GetFunctionByID(db, sch.FunctionID)
+		fn, err := store.GetFunctionByID(s.db, sch.FunctionID)
 		if err != nil || fn == nil {
 			// Function does not exist - this is an orphaned schedule entry
 			slog.Warn("orphaned_schedule_detected",
@@ -69,7 +67,7 @@ func (s *SchedulerService) LoadSchedules() error {
 			)
 
 			// Delete the orphaned schedule from the database
-			if err := store.DeleteSchedule(db, sch.ID); err != nil {
+			if err := store.DeleteSchedule(s.db, sch.ID); err != nil {
 				slog.Error("failed_to_delete_orphaned_schedule",
 					"schedule_id", sch.ID,
 					"error", err,
@@ -131,14 +129,8 @@ func (s *SchedulerService) RegisterSchedule(sch models.Schedule) error {
 
 		ctx := context.Background()
 
-		db, err := sqlite.InitDB()
-		if err != nil {
-			slog.Error("db_init_failed", "error", err)
-			return
-		}
-
 		// fetch latest function (safe)
-		fn, err := store.GetFunctionByID(db, sch.FunctionID)
+		fn, err := store.GetFunctionByID(s.db, sch.FunctionID)
 		if err != nil || fn == nil {
 			slog.Error("function_not_found",
 				"function_id", sch.FunctionID,

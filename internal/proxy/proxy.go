@@ -153,8 +153,8 @@ func ProxyHandler(targetURL *url.URL, timeoutSecs ...int) http.Handler {
 			return
 		}
 
-		// Allow control plane
-		if strings.HasPrefix(r.URL.Path, "/functions") {
+		// Allow control plane endpoints
+		if strings.HasPrefix(r.URL.Path, "/functions") || strings.HasPrefix(r.URL.Path, "/schedules") {
 			proxy.ServeHTTP(w, r)
 			return
 		}

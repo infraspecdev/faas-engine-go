@@ -153,10 +153,35 @@ func InitTables() error {
 
 		`CREATE INDEX IF NOT EXISTS idx_schedules_cron 
 		ON schedules(cron_expr);`,
+
+		// VERSION_HISTORY TABLE
+		`CREATE TABLE IF NOT EXISTS version_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			function_id INTEGER,
+			from_version TEXT,
+			to_version TEXT,
+			request_id TEXT,
+			triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			cleanup_status TEXT DEFAULT 'pending',
+			cleanup_error TEXT,
+			FOREIGN KEY(function_id) REFERENCES functions(id)
+		);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_version_history_function_id
+		ON version_history(function_id);`,
+
+		`CREATE INDEX IF NOT EXISTS idx_version_history_triggered_at
+		ON version_history(triggered_at DESC);`,
+
+		`CREATE UNIQUE INDEX IF NOT EXISTS idx_version_history_idempotency
+		ON version_history(function_id, request_id) WHERE request_id IS NOT NULL;`,
 	}
 
 	for _, q := range queries {
 		if _, err := db.Exec(q); err != nil {
+			if strings.Contains(err.Error(), "duplicate column name") {
+				continue
+			}
 			return err
 		}
 	}

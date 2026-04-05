@@ -38,4 +38,10 @@ type Store interface {
 	DeleteFunction(name string) error
 	ListFunctions() ([]models.Function, error)
 	GetInvocationLogs(functionID string, limit int) ([]models.Invocation, error)
+	// Rollback operations
+	RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, string, error)
+	RollbackToVersion(functionName, targetVersion, requestID string) (string, error)
+	GetPreviousVersion(functionName string) (string, error)
+	GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error)
+	UpdateCleanupStatus(functionID string, requestID string, status, errMsg string) error
 }

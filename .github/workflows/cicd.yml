@@ -241,10 +241,12 @@ jobs:
 
             echo "Building runtime images..."
             cd /opt/faas-engine/runtimes
+            docker build -t localhost:5000/runtimes/go:v1 go-runtime
             docker build -t localhost:5000/runtimes/node:v1 node-runtime
             docker build -t localhost:5000/runtimes/python:v1 python-runtime
             docker push localhost:5000/runtimes/node:v1
             docker push localhost:5000/runtimes/python:v1
+            docker push localhost:5000/runtimes/go:v1
             echo "Runtime images built and pushed to local registry"
 
       - name: Deploy and restart service
@@ -312,7 +314,7 @@ jobs:
             sudo mv /tmp/artifacts/proxy /opt/faas-engine/proxy
             sudo chmod +x /opt/faas-engine/proxy
             sudo chown faas-engine:faas-engine /opt/faas-engine/proxy
-            
+
             echo "=== Granting proxy permission to bind to privileged port 80 ==="
             sudo setcap cap_net_bind_service=+ep /opt/faas-engine/proxy
 

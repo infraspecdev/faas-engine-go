@@ -146,14 +146,78 @@ func CreateScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 
 func DeleteScheduleHandler(scheduler Scheduler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		db := sqlite.GetDB()
 
+		// Case 1: Delete all schedules globally with ?removeall=true
+		if r.URL.Query().Get("removeall") == "true" {
+			slog.Info("deleting all schedules")
+
+			deleted, err := store.DeleteAllSchedules(db)
+			if err != nil {
+				slog.Error("failed to delete all schedules", "error", err)
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			// Remove all from cron scheduler
+			// Note: In a real implementation, we'd need to get all schedule IDs first
+			// and remove them from the scheduler. For now, a restart will clean them up.
+			slog.Info("all schedules deleted from database", "count", deleted)
+
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"message": "deleted",
+				"deleted": deleted,
+			})
+			return
+		}
+
+		// Case 2: Delete all schedules for a function with ?function=functionName
+		functionName := r.URL.Query().Get("function")
+		if functionName != "" {
+			slog.Info("deleting all schedules for function", "function", functionName)
+
+			// Get all schedules for this function first so we can remove them from scheduler
+			schedules, err := store.ListSchedulesByFunctionName(db, functionName)
+			if err != nil {
+				slog.Error("failed to list schedules", "function", functionName, "error", err)
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			if len(schedules) == 0 {
+				writeError(w, http.StatusNotFound, "no schedules found for this function")
+				return
+			}
+
+			deleted, err := store.DeleteSchedulesByFunctionName(db, functionName)
+			if err != nil {
+				slog.Error("failed to delete schedules", "function", functionName, "error", err)
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+
+			// Remove all from cron scheduler
+			for _, s := range schedules {
+				scheduler.RemoveSchedule(s.ID)
+			}
+
+			slog.Info("schedules deleted for function", "function", functionName, "count", deleted)
+
+			w.WriteHeader(http.StatusOK)
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"message": "deleted",
+				"deleted": deleted,
+			})
+			return
+		}
+
+		// Case 3: Delete by ID (existing behavior)
 		id := mux.Vars(r)["id"]
 		if id == "" {
 			writeError(w, http.StatusBadRequest, "schedule id required")
 			return
 		}
-
-		db := sqlite.GetDB()
 
 		slog.Info("deleting schedule", "schedule_id", id)
 

@@ -108,6 +108,27 @@ func (f *fakeStore) GetInvocationLogs(functionID string, limit int) ([]models.In
 	return []models.Invocation{}, nil
 }
 
+func (f *fakeStore) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
+	return "v1", nil
+}
+
+func (f *fakeStore) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, string, error) {
+	// Return version, a default functionID (as string), and no error for testing
+	return "v1", "func-id-123", nil
+}
+
+func (f *fakeStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
+	return []models.VersionHistory{}, nil
+}
+
+func (f *fakeStore) GetPreviousVersion(functionName string) (string, error) {
+	return "", nil
+}
+
+func (f *fakeStore) UpdateCleanupStatus(functionID string, requestID string, status, errMsg string) error {
+	return nil
+}
+
 type fakeContainerClient struct {
 	createErr error
 	startErr  error

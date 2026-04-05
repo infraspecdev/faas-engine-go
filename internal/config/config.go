@@ -24,12 +24,12 @@ func ImageRef(namespace, name, tag string) string {
 
 // RegistryUsername returns the configured registry username, if any.
 func RegistryUsername() string {
-	return os.Getenv("FAAS_REGISTRY_USERNAME")
+	return os.Getenv("REGISTRY_USERNAME")
 }
 
 // RegistryPassword returns the configured registry password, if any.
 func RegistryPassword() string {
-	return os.Getenv("FAAS_REGISTRY_PASSWORD")
+	return os.Getenv("REGISTRY_PASSWORD")
 }
 
 // RuntimeURL returns the configured runtime manager URL.

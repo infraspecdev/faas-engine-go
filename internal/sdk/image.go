@@ -90,7 +90,8 @@ func (d *DockerClient) BuildImage(
 	return nil
 }
 
-// CheckImageName verifies that the given image name does not already exist locally.
+// CheckImageName verifies that the given image name does not already exist as a local untagged image.
+// Only checks for exact local image name matches (not registry-prefixed images).
 // Returns an error if a conflicting image name is found.
 func (d *DockerClient) CheckImageName(ctx context.Context, imageName string) error {
 	images, err := d.cli.ImageList(ctx, client.ImageListOptions{
@@ -101,39 +102,20 @@ func (d *DockerClient) CheckImageName(ctx context.Context, imageName string) err
 	}
 
 	for _, img := range images.Items {
-
 		for _, tag := range img.RepoTags {
+			// Only check for local image names (no "/" means it's a local image, not from registry).
+			// Example: "calc:latest" or "alpine:3.18" (local)
+			// Skip: "localhost:5000/functions/calc:v1" (registry image)
+			if !strings.Contains(tag, "/") {
+				// Remove version tag to get the image name
+				nameWithoutTag := strings.Split(tag, ":")[0]
 
-			// Example: docker.io/library/alpine:latest
-
-			// Remove version tag
-			nameWithoutTag := strings.Split(tag, ":")[0]
-
-			// Extract last segment
-			parts := strings.Split(nameWithoutTag, "/")
-			existingName := parts[len(parts)-1]
-
-			if existingName == imageName {
-				return fmt.Errorf("image name '%s' already exists", imageName)
+				if nameWithoutTag == imageName {
+					return fmt.Errorf("image name '%s' already exists locally", imageName)
+				}
 			}
 		}
 	}
-	return nil
-}
-
-// TagImage creates a new tag for an existing Docker image.
-// The source image must exist locally.
-// Returns an error if tagging fails.
-func (d *DockerClient) TagImage(ctx context.Context, source string, target string) error {
-	_, err := d.cli.ImageTag(ctx, client.ImageTagOptions{
-		Source: source,
-		Target: target,
-	})
-
-	if err != nil {
-		return fmt.Errorf("failed to tag image: %w", err)
-	}
-
 	return nil
 }
 
@@ -142,13 +124,20 @@ func (d *DockerClient) TagImage(ctx context.Context, source string, target strin
 func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 	username := config.RegistryUsername()
 	password := config.RegistryPassword()
+	registry := config.Registry()
 
 	opts := client.ImagePushOptions{}
-	if username != "" || password != "" {
+
+	// Only include registry auth for non-localhost registries.
+	// localhost:5000 doesn't require authentication.
+	isLocalRegistry := strings.HasPrefix(registry, "localhost") ||
+		strings.HasPrefix(registry, "127.0.0.1")
+
+	if !isLocalRegistry && username != "" && password != "" {
 		auth := map[string]string{
 			"username":      username,
 			"password":      password,
-			"serveraddress": config.Registry(),
+			"serveraddress": registry,
 		}
 
 		authJSON, err := json.Marshal(auth)
@@ -173,6 +162,20 @@ func (d *DockerClient) PushImage(ctx context.Context, target string) error {
 		return fmt.Errorf("failed to read push output: %w", err)
 	}
 
+	return nil
+}
+
+// TagImage tags an existing Docker image with a new reference.
+// Both source and target should be valid image references (e.g., "alpine:latest", "localhost:5000/functions/calc:v1").
+// Returns an error if the source image does not exist or if tagging fails.
+func (d *DockerClient) TagImage(ctx context.Context, source string, target string) error {
+	_, err := d.cli.ImageTag(ctx, client.ImageTagOptions{
+		Source: source,
+		Target: target,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to tag image %s as %s: %w", source, target, err)
+	}
 	return nil
 }
 

@@ -219,10 +219,16 @@ func CreateTarStream(dirPath string, runtime string) (io.Reader, error) {
 
 			case "go":
 				baseImage := config.ImageRef(config.RuntimesRepo, "go", "v1")
-				dockerfile = fmt.Sprintf(
-					"FROM %s\nCOPY . /function\n",
-					baseImage,
-				)
+				dockerfile = fmt.Sprintf(`
+				FROM golang:1.22-alpine AS builder
+				WORKDIR /build
+				COPY . .
+				RUN go build -o handler handler.go
+
+				FROM %s
+				COPY --from=builder /build/handler /function/handler
+				RUN chmod +x /function/handler
+				`, baseImage)
 
 			default:
 				pw.CloseWithError(fmt.Errorf("unsupported runtime: %s\nUse node, python or go", runtime))
@@ -338,4 +344,43 @@ func SendTarStream(tarStream io.Reader, url string, functionName string) error {
 	}
 
 	return nil
+}
+
+// CheckFunctionExists checks if a function with the given name already exists
+// by querying the list of all functions
+// Returns true if function exists, false otherwise, and any error that occurred
+func CheckFunctionExists(serverAddr string, functionName string) (bool, error) {
+	url := fmt.Sprintf("%s/functions", serverAddr)
+	
+	resp, err := http.Get(url)
+	if err != nil {
+		return false, fmt.Errorf("failed to check function: %w", err)
+	}
+	defer resp.Body.Close()
+	
+	// If we can't get the list, assume we can't verify
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return false, fmt.Errorf("server returned %s: %s", resp.Status, string(body))
+	}
+	
+	// Parse the response to look for our function
+	var response struct {
+		Functions []struct {
+			Name string `json:"name"`
+		} `json:"functions"`
+	}
+	
+	if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+		return false, fmt.Errorf("failed to parse function list: %w", err)
+	}
+	
+	// Check if our function is in the list
+	for _, fn := range response.Functions {
+		if fn.Name == functionName {
+			return true, nil
+		}
+	}
+	
+	return false, nil
 }

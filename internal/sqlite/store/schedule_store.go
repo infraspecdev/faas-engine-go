@@ -97,6 +97,30 @@ func DeleteSchedule(db *sql.DB, id string) error {
 	return nil
 }
 
+// DeleteSchedulesByFunctionName deletes all schedules for a specific function
+// Returns the number of schedules deleted
+func DeleteSchedulesByFunctionName(db *sql.DB, functionName string) (int64, error) {
+	res, err := db.Exec(`DELETE FROM schedules WHERE function_id IN (SELECT id FROM functions WHERE name=?)`, functionName)
+	if err != nil {
+		return 0, err
+	}
+
+	rows, _ := res.RowsAffected()
+	return rows, nil
+}
+
+// DeleteAllSchedules deletes all schedules
+// Returns the number of schedules deleted
+func DeleteAllSchedules(db *sql.DB) (int64, error) {
+	res, err := db.Exec(`DELETE FROM schedules`)
+	if err != nil {
+		return 0, err
+	}
+
+	rows, _ := res.RowsAffected()
+	return rows, nil
+}
+
 // ---------- GET ONE ----------
 func GetScheduleByID(db *sql.DB, id string) (*models.Schedule, error) {
 

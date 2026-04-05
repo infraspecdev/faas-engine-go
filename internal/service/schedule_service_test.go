@@ -29,7 +29,7 @@ func (m *MockInvoker) Invoke(ctx context.Context, functionName string, payload [
 // ---------- TEST: NewSchedulerService ----------
 func TestNewSchedulerService(t *testing.T) {
 	mock := &MockInvoker{}
-	s := NewSchedulerService(mock)
+	s := NewSchedulerService(mock, nil)
 
 	if s.cron == nil {
 		t.Fatal("cron should not be nil")
@@ -48,7 +48,7 @@ func TestNewSchedulerService(t *testing.T) {
 // ---------- TEST: RegisterSchedule ----------
 func TestRegisterSchedule(t *testing.T) {
 	mock := &MockInvoker{}
-	s := NewSchedulerService(mock)
+	s := NewSchedulerService(mock, nil)
 
 	sch := models.Schedule{
 		ID:         "1",
@@ -69,7 +69,7 @@ func TestRegisterSchedule(t *testing.T) {
 // ---------- TEST: Duplicate Schedule ----------
 func TestRegisterDuplicateSchedule(t *testing.T) {
 	mock := &MockInvoker{}
-	s := NewSchedulerService(mock)
+	s := NewSchedulerService(mock, nil)
 
 	sch := models.Schedule{
 		ID:         "1",
@@ -89,7 +89,7 @@ func TestRegisterDuplicateSchedule(t *testing.T) {
 // ---------- TEST: Invalid Cron ----------
 func TestRegisterInvalidCron(t *testing.T) {
 	mock := &MockInvoker{}
-	s := NewSchedulerService(mock)
+	s := NewSchedulerService(mock, nil)
 
 	sch := models.Schedule{
 		ID:       "1",
@@ -105,7 +105,7 @@ func TestRegisterInvalidCron(t *testing.T) {
 // ---------- TEST: RemoveSchedule ----------
 func TestRemoveSchedule(t *testing.T) {
 	mock := &MockInvoker{}
-	s := NewSchedulerService(mock)
+	s := NewSchedulerService(mock, nil)
 
 	sch := models.Schedule{
 		ID:       "1",

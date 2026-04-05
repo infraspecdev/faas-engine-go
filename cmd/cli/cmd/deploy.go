@@ -1,11 +1,14 @@
 package cmd
 
 import (
+	"bufio"
 	"faas-engine-go/internal/buildcontext"
 	"fmt"
 	"log"
 	"log/slog"
+	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -28,6 +31,32 @@ to quickly create a Cobra application.`,
 		abspath, err := filepath.Abs(filePath)
 		if err != nil {
 			return fmt.Errorf("failed to get absolute path: %w", err)
+		}
+
+		// Check if function already exists
+		exists, err := buildcontext.CheckFunctionExists(serverAddr, functionName)
+		if err != nil {
+			slog.Warn("could not check if function exists", "error", err)
+			// Continue anyway - if we can't check, we'll attempt deployment
+		}
+
+		// If function exists, prompt user
+		if exists {
+			fmt.Printf("\n")
+			color.Yellow("⚠️  Function '%s' already exists.", functionName)
+			fmt.Printf("\n")
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print("Do you want to deploy a new version? (y/n): ")
+			response, err := reader.ReadString('\n')
+			if err != nil {
+				return fmt.Errorf("failed to read user input: %w", err)
+			}
+
+			response = strings.TrimSpace(strings.ToLower(response))
+			if response != "y" && response != "yes" {
+				color.Red("Deployment cancelled.\n")
+				return nil
+			}
 		}
 
 		//create a tar stream of the function directory

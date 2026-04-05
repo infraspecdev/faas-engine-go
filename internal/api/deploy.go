@@ -128,7 +128,7 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			Name:            functionName,
 			Version:         functionVersion,
 			PackageChecksum: checksum,
-			Image:           fmt.Sprintf("localhost:5000/functions/%s:%s", functionName, functionVersion),
+			Image:           config.ImageRef(config.FunctionsRepo, functionName, functionVersion),
 			Runtime:         "node",
 			ScheduleCron:    "",
 			Endpoint:        fmt.Sprintf("%s.localhost", functionName),

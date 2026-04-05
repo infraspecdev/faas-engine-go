@@ -1,10 +1,13 @@
 package cmd
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/spf13/cobra"
@@ -151,12 +154,140 @@ var scheduleListCmd = &cobra.Command{
 
 // -------------------- DELETE --------------------
 
+var (
+	deleteAllFlag       bool
+	deleteRemoveAllFlag bool
+)
+
 var scheduleDeleteCmd = &cobra.Command{
-	Use:   "delete [scheduleID]",
-	Short: "Delete a scheduled job",
-	Args:  cobra.ExactArgs(1),
+	Use:   "delete [scheduleID or functionName]",
+	Short: "Delete scheduled jobs",
+	Long:  `Delete schedules by ID, by function name with --all flag, or remove all schedules with --removeall`,
+	Args:  cobra.MaximumNArgs(1),
 
 	RunE: func(cmd *cobra.Command, args []string) error {
+		// Check conflicting flags
+		if deleteRemoveAllFlag && len(args) > 0 {
+			color.Red("✗ Cannot specify both --removeall and a schedule ID or function name")
+			return fmt.Errorf("conflicting flags")
+		}
+
+		if deleteRemoveAllFlag && deleteAllFlag {
+			color.Red("✗ Cannot use --removeall and --all together")
+			return fmt.Errorf("conflicting flags")
+		}
+
+		// Case 1: Delete all schedules globally with --removeall
+		if deleteRemoveAllFlag {
+			if !confirmAction("Are you sure you want to delete ALL schedules?") {
+				color.Yellow("✗ Operation cancelled")
+				return nil
+			}
+
+			req, err := http.NewRequest(
+				http.MethodDelete,
+				fmt.Sprintf("%s/schedules?removeall=true", serverAddr),
+				nil,
+			)
+			if err != nil {
+				color.Red("✗ Failed to delete schedules")
+				return err
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				color.Red("✗ Failed to connect to server")
+				return fmt.Errorf("unable to reach runtime manager at %s: %w", serverAddr, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				var errResp map[string]string
+				if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+					if errMsg, ok := errResp["error"]; ok {
+						color.Red("✗ Failed to delete schedules")
+						return fmt.Errorf("%s", errMsg)
+					}
+				}
+				color.Red("✗ Failed to delete schedules")
+				return fmt.Errorf("server error: %s", resp.Status)
+			}
+
+			var resp_body map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&resp_body)
+			if deleted, ok := resp_body["deleted"]; ok {
+				color.Green("✅ Deleted %v schedules", deleted)
+			} else {
+				color.Green("✅ All schedules deleted successfully")
+			}
+			return nil
+		}
+
+		// Case 2: Delete all schedules for a function with --all
+		if deleteAllFlag {
+			if len(args) == 0 {
+				color.Red("✗ Function name required with --all flag")
+				return fmt.Errorf("missing function name")
+			}
+
+			functionName := args[0]
+			if !confirmAction(fmt.Sprintf("Are you sure you want to delete all schedules for function '%s'?", functionName)) {
+				color.Yellow("✗ Operation cancelled")
+				return nil
+			}
+
+			req, err := http.NewRequest(
+				http.MethodDelete,
+				fmt.Sprintf("%s/schedules?function=%s", serverAddr, functionName),
+				nil,
+			)
+			if err != nil {
+				color.Red("✗ Failed to delete schedules")
+				return err
+			}
+
+			client := &http.Client{}
+			resp, err := client.Do(req)
+			if err != nil {
+				color.Red("✗ Failed to connect to server")
+				return fmt.Errorf("unable to reach runtime manager at %s: %w", serverAddr, err)
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode == http.StatusNotFound {
+				color.Yellow("℧ No schedules found for function '%s'", functionName)
+				return nil
+			}
+
+			if resp.StatusCode != http.StatusOK {
+				var errResp map[string]string
+				if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
+					if errMsg, ok := errResp["error"]; ok {
+						color.Red("✗ Failed to delete schedules")
+						return fmt.Errorf("%s", errMsg)
+					}
+				}
+				color.Red("✗ Failed to delete schedules")
+				return fmt.Errorf("server error: %s", resp.Status)
+			}
+
+			var resp_body map[string]interface{}
+			json.NewDecoder(resp.Body).Decode(&resp_body)
+			if deleted, ok := resp_body["deleted"]; ok {
+				color.Green("✅ Deleted %v schedules for function '%s'", deleted, functionName)
+			} else {
+				color.Green("✅ Schedules deleted successfully for function '%s'", functionName)
+			}
+			return nil
+		}
+
+		// Case 3: Delete specific schedule by ID (current behavior)
+		if len(args) == 0 {
+			color.Red("✗ Schedule ID required (or use --all with function name or --removeall)")
+			return fmt.Errorf("missing schedule ID or flags")
+		}
+
 		id := args[0]
 
 		req, err := http.NewRequest(
@@ -183,7 +314,6 @@ var scheduleDeleteCmd = &cobra.Command{
 		}
 
 		if resp.StatusCode != http.StatusOK {
-			// Parse error response to get detailed message
 			var errResp map[string]string
 			if err := json.NewDecoder(resp.Body).Decode(&errResp); err == nil {
 				if errMsg, ok := errResp["error"]; ok {
@@ -202,12 +332,24 @@ var scheduleDeleteCmd = &cobra.Command{
 
 // -------------------- INIT --------------------
 
+// confirmAction prompts user for confirmation of a destructive action
+func confirmAction(prompt string) bool {
+	fmt.Print(color.YellowString(prompt + " (yes/no): "))
+	reader := bufio.NewReader(os.Stdin)
+	response, _ := reader.ReadString('\n')
+	response = strings.TrimSpace(strings.ToLower(response))
+	return response == "yes" || response == "y"
+}
+
 func init() {
 	// Flags
 	scheduleCreateCmd.Flags().StringVar(&cronExpr, "cron", "", "Cron expression")
 	scheduleCreateCmd.Flags().StringVar(&data, "data", "", "JSON payload")
 
 	scheduleListCmd.Flags().StringVarP(&functionFilter, "function", "f", "", "Filter by function name")
+
+	scheduleDeleteCmd.Flags().BoolVar(&deleteAllFlag, "all", false, "Delete all schedules for a function")
+	scheduleDeleteCmd.Flags().BoolVar(&deleteRemoveAllFlag, "removeall", false, "Delete all schedules globally")
 
 	// Attach subcommands
 	scheduleCmd.AddCommand(scheduleCreateCmd)

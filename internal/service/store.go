@@ -107,3 +107,23 @@ func (s *realStore) ListFunctions() ([]models.Function, error) {
 func (s *realStore) GetInvocationLogs(functionID string, limit int) ([]models.Invocation, error) {
 	return sqlstore.GetInvocationLogsByFunction(s.db, functionID, limit)
 }
+
+func (s *realStore) RollbackToVersionWithID(functionName, targetVersion, requestID string) (string, string, error) {
+	return sqlstore.RollbackToVersionWithID(s.db, functionName, targetVersion, requestID)
+}
+
+func (s *realStore) RollbackToVersion(functionName, targetVersion, requestID string) (string, error) {
+	return sqlstore.RollbackToVersion(s.db, functionName, targetVersion, requestID)
+}
+
+func (s *realStore) GetPreviousVersion(functionName string) (string, error) {
+	return sqlstore.GetPreviousVersion(s.db, functionName)
+}
+
+func (s *realStore) GetVersionHistory(functionName string, limit int) ([]models.VersionHistory, error) {
+	return sqlstore.GetVersionHistory(s.db, functionName, limit)
+}
+
+func (s *realStore) UpdateCleanupStatus(functionID string, requestID string, status, errMsg string) error {
+	return sqlstore.UpdateCleanupStatus(s.db, functionID, requestID, status, errMsg)
+}

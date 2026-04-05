@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"faas-engine-go/internal/config"
+	"faas-engine-go/internal/sdk"
 	"faas-engine-go/internal/sqlite/models"
 )
 
@@ -30,16 +32,18 @@ var (
 )
 
 type functionDeleteService struct {
-	store    DeleteStore
-	registry RegistryClient
-	retry    RetryFunc
+	store        DeleteStore
+	registry     RegistryClient
+	dockerClient sdk.ImageClient
+	retry        RetryFunc
 }
 
-func NewFunctionDeleteService(s DeleteStore, r RegistryClient) *functionDeleteService {
+func NewFunctionDeleteService(s DeleteStore, r RegistryClient, docker sdk.ImageClient) *functionDeleteService {
 	return &functionDeleteService{
-		store:    s,
-		registry: r,
-		retry:    defaultRetry,
+		store:        s,
+		registry:     r,
+		dockerClient: docker,
+		retry:        defaultRetry,
 	}
 }
 
@@ -61,23 +65,23 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 	)
 
 	for _, v := range versions {
-		version := v.Version
+		version := v
 
 		wg.Add(1)
 
-		go func(ver string) {
+		go func(fn models.Function) {
 			defer wg.Done()
 
-			digest, err := s.registry.GetDigest(name, ver)
+			digest, err := s.registry.GetDigest(name, fn.Version)
 			if err != nil {
 				if errors.Is(err, errNotFound) {
-					slog.Info("already_deleted", "function", name, "version", ver)
+					slog.Info("already_deleted", "function", name, "version", fn.Version)
 					return
 				}
 
 				// If registry is unreachable or connection error, skip deletion from registry
 				// This allows deleting functions that are only deployed locally
-				slog.Warn("registry_unavailable_skipping_image_delete", "function", name, "version", ver, "error", err.Error())
+				slog.Warn("registry_unavailable_skipping_image_delete", "function", name, "version", fn.Version, "error", err.Error())
 				return
 			}
 
@@ -88,13 +92,20 @@ func (s *functionDeleteService) DeleteFunction(name string) ([]string, error) {
 			if err != nil {
 				// Check if it's a 405 Method Not Allowed error (registry doesn't support DELETE)
 				if err.Error() == "delete failed: 405 Method Not Allowed" {
-					slog.Info("registry_delete_not_supported", "function", name, "version", ver, "note", "registry does not support DELETE operations")
+					slog.Info("registry_delete_not_supported", "function", name, "version", fn.Version, "note", "registry does not support DELETE operations")
+					// Try to remove local Docker image as fallback using the stored image reference
+					ctx := context.Background()
+					if err := s.dockerClient.RemoveImage(ctx, fn.Image); err != nil {
+						slog.Warn("failed_to_remove_local_image", "function", name, "version", fn.Version, "image", fn.Image, "error", err.Error())
+					} else {
+						slog.Info("local_image_removed", "function", name, "version", fn.Version, "image", fn.Image)
+					}
 					return
 				}
-				slog.Warn("registry_image_delete_failed", "function", name, "version", ver, "error", err.Error())
+				slog.Warn("registry_image_delete_failed", "function", name, "version", fn.Version, "error", err.Error())
 				// Track failed versions but continue with database deletion
 				mu.Lock()
-				failedList = append(failedList, ver)
+				failedList = append(failedList, fn.Version)
 				mu.Unlock()
 				return
 			}
