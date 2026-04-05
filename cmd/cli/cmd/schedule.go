@@ -215,7 +215,10 @@ var scheduleDeleteCmd = &cobra.Command{
 			}
 
 			var resp_body map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&resp_body)
+			if err := json.NewDecoder(resp.Body).Decode(&resp_body); err != nil {
+				color.Green("✅ All schedules deleted successfully")
+				return nil
+			}
 			if deleted, ok := resp_body["deleted"]; ok {
 				color.Green("✅ Deleted %v schedules", deleted)
 			} else {
@@ -273,7 +276,10 @@ var scheduleDeleteCmd = &cobra.Command{
 			}
 
 			var resp_body map[string]interface{}
-			json.NewDecoder(resp.Body).Decode(&resp_body)
+			if err := json.NewDecoder(resp.Body).Decode(&resp_body); err != nil {
+				color.Green("✅ Schedules deleted successfully for function '%s'", functionName)
+				return nil
+			}
 			if deleted, ok := resp_body["deleted"]; ok {
 				color.Green("✅ Deleted %v schedules for function '%s'", deleted, functionName)
 			} else {
