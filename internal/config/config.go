@@ -24,12 +24,20 @@ func ImageRef(namespace, name, tag string) string {
 
 // RegistryUsername returns the configured registry username, if any.
 func RegistryUsername() string {
-	return os.Getenv("REGISTRY_USERNAME")
+	username := os.Getenv("REGISTRY_USERNAME")
+	if username == "" {
+		return ""
+	}
+	return username
 }
 
 // RegistryPassword returns the configured registry password, if any.
 func RegistryPassword() string {
-	return os.Getenv("REGISTRY_PASSWORD")
+	password := os.Getenv("REGISTRY_PASSWORD")
+	if password == "" {
+		return ""
+	}
+	return password
 }
 
 // RuntimeURL returns the configured runtime manager URL.
