@@ -66,7 +66,7 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 
 	// Validate explicit rollback target if provided
 	if targetVersion != "" {
-		err := rs.validateImageExists(ctx, functionName, targetVersion)
+		err := rs.validateImageExists(functionName, targetVersion)
 		if err != nil {
 			return nil, fmt.Errorf("image validation failed: %w", err)
 		}
@@ -105,7 +105,7 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 	go func() {
 		cleanCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
-		cleanupErr := rs.cleanupOldContainers(cleanCtx, functionName, previousVersion, currentFunc.ID)
+		cleanupErr := rs.cleanupOldContainers(cleanCtx, functionName, previousVersion)
 
 		var status, errMsg string
 		if cleanupErr != nil {
@@ -144,7 +144,7 @@ func (rs *RollbackService) Rollback(ctx context.Context, functionName, targetVer
 // Returns error if cleanup fails
 // Note: This function is called asynchronously; errors do not block rollback completion.
 // Cleanup status is tracked and returned in the RollbackResult.
-func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionName, previousVersion, currentActiveFunctionID string) error {
+func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionName, previousVersion string) error {
 	// List all versions of this function to find the inactive one
 	versions, err := rs.store.ListFunctionVersions(functionName)
 	if err != nil {
@@ -173,7 +173,8 @@ func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionNam
 
 	var lastErr error
 	for _, c := range containers {
-		if c.Status == "free" {
+		switch c.Status {
+		case "free":
 			slog.Info("cleanup: removing free container", "container_id", c.ID, "version", previousVersion)
 
 			if err := rs.containerClient.StopContainer(ctx, c.ID); err != nil {
@@ -190,7 +191,7 @@ func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionNam
 				slog.Warn("cleanup: failed to remove container from db", "container_id", c.ID, "error", err)
 				lastErr = err
 			}
-		} else if c.Status == "busy" {
+		case "busy":
 			slog.Info("cleanup: skipping busy container (will be cleaned by spleen)", "container_id", c.ID, "version", previousVersion)
 		}
 	}
@@ -202,7 +203,7 @@ func (rs *RollbackService) cleanupOldContainers(ctx context.Context, functionNam
 }
 
 // validateImageExists checks if target version image exists in DB .
-func (rs *RollbackService) validateImageExists(ctx context.Context, functionName, targetVersion string) error {
+func (rs *RollbackService) validateImageExists(functionName, targetVersion string) error {
 	versions, err := rs.store.ListFunctionVersions(functionName)
 	if err != nil {
 		return fmt.Errorf("failed to fetch versions: %w", err)
