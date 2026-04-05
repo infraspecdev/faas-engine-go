@@ -89,7 +89,8 @@ func ProxyHandler(targetURL *url.URL, timeoutSecs ...int) http.Handler {
 			"method", req.Method,
 		)
 
-		if strings.HasPrefix(req.URL.Path, "/functions") {
+		// Handle control plane endpoints: /functions and /schedules
+		if strings.HasPrefix(req.URL.Path, "/functions") || strings.HasPrefix(req.URL.Path, "/schedules") {
 			out.URL.Path = req.URL.Path
 			out.URL.RawQuery = req.URL.RawQuery
 
@@ -98,7 +99,7 @@ func ProxyHandler(targetURL *url.URL, timeoutSecs ...int) http.Handler {
 				out.Header[k] = vv
 			}
 
-			slog.Info("control plane request", "path", req.URL.Path)
+			slog.Info("control plane request", "path", req.URL.Path, "method", req.Method)
 			return
 		}
 
