@@ -21,9 +21,9 @@ var (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "lambda",
+	Use:   "nimbus",
 	Short: "CLI for interacting with the FaaS runtime manager",
-	Long:  `Lambda CLI allows deploying, invoking, listing and managing serverless functions.`,
+	Long:  `Nimbus CLI allows deploying, invoking, listing and managing serverless functions.`,
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
 	// Run: func(cmd *cobra.Command, args []string) { },
