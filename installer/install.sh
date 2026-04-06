@@ -7,19 +7,17 @@ echo "Installing Nimbus CLI..."
 REPO="infraspecdev/faas-engine-go"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
-# Check dependencies
-for cmd in curl; do
-  if ! command -v $cmd >/dev/null 2>&1; then
-    echo "Error: $cmd is required"
-    exit 1
-  fi
-done
+# Check dependency
+if ! command -v curl >/dev/null 2>&1; then
+  echo "Error: curl is required"
+  exit 1
+fi
 
-# Get version (allow override via VERSION env var)
+# Get version (allow override)
 VERSION="${1:-}"
 if [ -z "$VERSION" ]; then
   echo "Fetching latest version..."
-  VERSION=$(curl -s https://api.github.com/repos/$REPO/releases/latest | grep -o '"tag_name":"[^"]*' | cut -d'"' -f4)
+  VERSION=$(curl -s https://api.github.com/repos/$REPO/releases/latest | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p')
 fi
 
 if [ -z "$VERSION" ]; then
@@ -29,12 +27,12 @@ fi
 
 echo "Version: $VERSION"
 
-# Detect OS and Architecture
+# Detect OS and architecture
 OS="$(uname -s)"
 ARCH="$(uname -m)"
 
 case "$OS" in
-  Linux) 
+  Linux)
     case "$ARCH" in
       x86_64) FILE="nimbus-linux-amd64-$VERSION" ;;
       aarch64) FILE="nimbus-linux-arm64-$VERSION" ;;
@@ -57,34 +55,32 @@ esac
 URL="https://github.com/$REPO/releases/download/$VERSION/$FILE"
 TMPFILE=$(mktemp)
 
-# Download with cleanup on error
 trap "rm -f $TMPFILE" EXIT
 
-echo "Downloading binary from $URL..."
-if ! curl -fL --progress-bar -o "$TMPFILE" "$URL"; then
-  echo "Error: Failed to download"
-  exit 1
-fi
+echo "Downloading binary..."
+curl -fL --progress-bar -o "$TMPFILE" "$URL"
 
 chmod +x "$TMPFILE"
 
-# Verify directory and permissions
 if [ ! -d "$INSTALL_DIR" ]; then
   echo "Error: Install directory $INSTALL_DIR does not exist"
   exit 1
 fi
 
-# Install
 echo "Installing to $INSTALL_DIR..."
 
-if ! sudo mv "$TMPFILE" "$INSTALL_DIR/nimbus" 2>/dev/null; then
-  if [ "$EUID" -ne 0 ]; then
-    echo "Error: Insufficient permissions. Try running with sudo or as root."
-    exit 1
-  fi
-  echo "Error: Failed to move binary"
-  exit 1
+if [ "$EUID" -ne 0 ]; then
+  sudo mv "$TMPFILE" "$INSTALL_DIR/nimbus"
+else
+  mv "$TMPFILE" "$INSTALL_DIR/nimbus"
 fi
 
-echo "✓ Installation complete"
+echo "Installation complete"
 echo "Run: nimbus --help"
+
+# PATH warning
+if ! command -v nimbus >/dev/null 2>&1; then
+  echo "Warning: $INSTALL_DIR is not in your PATH"
+  echo "Add it using:"
+  echo "  export PATH=\$PATH:$INSTALL_DIR"
+fi
