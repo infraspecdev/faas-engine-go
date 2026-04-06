@@ -129,7 +129,7 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 		if err != nil {
 			host = r.Host
 		}
-
+		// For local development, allow "localhost" as host. In production, expect real hostname.
 		var endpoint string
 		if host == "localhost" || host == "127.0.0.1" {
 			endpoint = fmt.Sprintf("%s.localhost", functionName)
