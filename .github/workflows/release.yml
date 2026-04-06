@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.22"
+
+      - name: Set version
+        run: echo "VERSION=${{ github.ref_name }}" >> $env:GITHUB_ENV
+
+      - name: Build binaries
+        run: |
+          echo "Building Windows binary..."
+          go build -buildvcs=false -o nimbus.exe ./cmd/cli
+
+          echo "Building Linux binary..."
+          $env:GOOS="linux"
+          $env:GOARCH="amd64"
+          go build -o nimbus-linux-amd64-$env:VERSION ./cmd/cli
+
+          echo "Building Mac binary..."
+          $env:GOOS="darwin"
+          $env:GOARCH="amd64"
+          go build -o nimbus-darwin-amd64-$env:VERSION ./cmd/cli
+
+      - name: Move Windows binary to installer
+        run: move nimbus.exe installer\nimbus.exe
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y
+
+      - name: Build Installer
+        run: |
+          cd installer
+          iscc /DVERSION=${{ env.VERSION }} setup.iss
+
+      - name: Rename installer
+        run: |
+          move installer\Output\nimbus-installer.exe installer\Output\nimbus-installer-$env:VERSION.exe
+
+      - name: Debug files
+        run: dir installer\Output
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/Output/nimbus-installer-${{ env.VERSION }}.exe
+            nimbus-linux-amd64-${{ env.VERSION }}
+            nimbus-darwin-amd64-${{ env.VERSION }}
