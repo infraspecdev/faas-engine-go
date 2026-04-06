@@ -39,7 +39,7 @@ to quickly create a Cobra application.`,
 		}
 
 		//create a tar stream of the function directory
-		fmt.Print("[1/3] Packaging function code...")
+		fmt.Print("[1/5] Packaging function code...")
 		tarstream, err := buildcontext.CreateTarStream(abspath, runtimeName)
 		if err != nil {
 			color.Red(" Failed. \n\n%s\n", err.Error())
@@ -51,7 +51,7 @@ to quickly create a Cobra application.`,
 		}
 
 		// Check if function already exists and ask for confirmation if not using --force
-		fmt.Print("[2/3] Checking if function exists...")
+		fmt.Print("[2/5] Checking if function exists...")
 		functionExists, err := checkFunctionExists(functionName)
 		if err != nil {
 			color.Red(" Failed. \n\n%s\n", err.Error())
@@ -82,7 +82,7 @@ to quickly create a Cobra application.`,
 		url := fmt.Sprintf("%s/functions", serverAddr)
 
 		// Stream deploy logs from server
-		fmt.Print("[3/3] Deploying function...")
+		fmt.Print("[3/5] Deploying function...")
 		err = buildcontext.SendTarStream(tarstream, url, functionName)
 		if err != nil {
 			slog.Error("deployment failed", "error", err)
