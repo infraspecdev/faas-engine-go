@@ -1,230 +1,299 @@
-# Lambda (FaaS)
-**Duration:** 8 Weeks
-**Team Size:** 2 Developers
-**Focus:** Serverless Computing, Event-Driven Architecture, Containerization
+# Nimbus - Function as a Service (FaaS) Engine
 
-## 1. Project Overview
-The goal of this internship is to build a simplified **Function as a Service (FaaS)** platform similar to AWS Lambda using **Go** programming language.
+A lightweight, serverless computing platform written in Go that allows you to deploy, manage, and invoke containerized functions via a simple CLI and HTTP gateway.
 
-By the end of this project, you will have built a system that allows a user to deploy serverless functions via a CLI command (e.g., `lambda deploy ./my-function`), which will package the code, run it in an isolated container, and expose it via HTTP (e.g., `http://my-func.localhost`).
+## Project Overview
 
-### Core Learning Objectives
-*   **Container Runtime:** Building lightweight, fast-spinning containers for function execution.
-*   **Event-Driven Design:** Understanding HTTP triggers, scheduled events, and async invocation patterns.
-*   **Cold Start Optimization:** Learning about container pooling, warm instances, and startup latency.
-*   **CLI Design:** Building intuitive developer tools using a suited Go library.
+**Nimbus** is a simplified **Function as a Service (FaaS)** platform similar to AWS Lambda. It enables developers to:
 
+- 🚀 Deploy serverless functions with a single CLI command
+- 🐳 Run functions in isolated Docker containers
+- ⚡ Invoke functions via HTTP endpoints
+- 📅 Schedule function execution with cron-style scheduling
+- 📊 Stream function logs in real-time
+- 🔌 Support multiple runtimes (Node.js, Python, Go)
 
-## 2. High-Level Architecture
+### Core Features
+
+- **CLI Tool:** Deploy, invoke, manage, and delete functions from the command line
+- **HTTP Gateway:** Routes requests to function containers with load balancing
+- **Container Management:** Automatic Docker container lifecycle management
+- **Persistent Storage:** SQLite database for function metadata and invocation logs
+- **Cron Scheduler:** Schedule functions to run at specified intervals
+- **Real-time Logging:** Stream and view function execution logs
+
+### Architecture
+
 The system consists of three main components:
 
-1.  **The CLI (Client):** A command-line tool running on the user's machine. It packages function code and sends it to the server for deployment.
-2.  **The Gateway (API + Router):** The "brain" of the operation. It receives function code, manages deployments, and routes HTTP requests to the appropriate function containers.
-3.  **The Runtime Manager:** Manages Docker containers for function execution—spinning them up, handling invocations, and managing their lifecycle.
+1. **CLI (Client):** Command-line tool for deploying and managing functions
+2. **API Gateway:** HTTP server that routes requests and manages deployments
+3. **Runtime Manager:** Manages Docker containers and function execution
 
-### System Diagram
 
-```mermaid
-flowchart TD
-    subgraph "User's Machine"
-        CLI[Terminal / CLI Tool]
-        Browser[Web Browser / curl]
-    end
+---
 
-    subgraph "Cloud VM"
-        Gateway[HTTP Gateway / API]
-        Runtime[Runtime Manager]
-        DB[(SQLite DB)]
-        Docker[Docker Daemon]
-        Fn1[Container: Function A]
-        Fn2[Container: Function B]
-        Scheduler[Cron Scheduler]
-    end
+## Installation
 
-    %% Deployment Flow
-    CLI -- "1. lambda deploy (zip)" --> Gateway
-    Gateway -- "2. Store metadata" --> DB
-    Gateway -- "3. Build image" --> Docker
-    Docker -- "4. Create container" --> Fn1
-    Docker -- "4. Create container" --> Fn2
+### Prerequisites
 
-    %% Invocation Flow
-    Browser -- "1. HTTP Request: func-a.localhost" --> Gateway
-    Gateway -- "2. Route to function" --> Runtime
-    Runtime -- "3. Invoke" --> Fn1
-    Fn1 -- "4. Response" --> Gateway
+Before installing Nimbus, ensure you have the following installed:
 
-    %% Scheduled Execution
-    Scheduler -- "Trigger on schedule" --> Runtime
+- **Go 1.25.6+** — [Download](https://golang.org/dl/)
+- **Docker** — [Download](https://www.docker.com/products/docker-desktop)
+- **Git** — [Download](https://git-scm.com/)
 
-    %% Styling
-    style CLI fill:#e1f5fe,stroke:#01579b
-    style Gateway fill:#e8f5e9,stroke:#2e7d32
-    style Runtime fill:#fff3e0,stroke:#ef6c00
-    style Docker fill:#f3e5f5,stroke:#7b1fa2
-    style Scheduler fill:#fce4ec,stroke:#c2185b
-```
+### Quick Install
 
-## 3. Example Walkthrough
+#### Linux & macOS
 
-To understand the project better, here is how a developer will eventually use your platform:
+Download and run the installer script:
 
-### User Perspective (The CLI)
-Imagine a developer has a simple function in a folder. They will use your tool like this:
 ```bash
-$ cd my-function
-$ lambda deploy . --name greet
-[1/3] Packaging function code... Done.
-[2/3] Building image "func-greet"... (Docker build output follows)
-[3/3] Starting container... Done.
-
-Your function is live at: http://greet.localhost
+curl -fsSL https://raw.githubusercontent.com/infraspecdev/faas-engine-go/main/installer/install.sh | bash
 ```
 
-### Invoking the Function
+Or specify a version:
+
 ```bash
-$ curl "http://greet.localhost?name=World"
-{"message": "Hello, World!"}
-
-# Or via CLI
-$ lambda invoke greet --data '{"name": "World"}'
-{"message": "Hello, World!"}
+curl -fsSL https://raw.githubusercontent.com/infraspecdev/faas-engine-go/main/installer/install.sh | bash -s v1.0.0
 ```
 
-### Scheduling a Function
+Verify installation:
+
 ```bash
-$ lambda schedule greet --cron "0 * * * *"  # Run every hour
-Scheduled function "greet" with cron: 0 * * * *
+nimbus --version
 ```
 
-### Behind the Scenes (The Server Logic)
-Internally, your **Gateway** code will look something like this (Go code):
+#### Windows
+
+Download the latest release from [GitHub Releases](https://github.com/infraspecdev/faas-engine-go/releases) and add it to your PATH.
+
+### Build from Source
+
+```bash
+# Clone the repository
+git clone https://github.com/infraspecdev/faas-engine-go.git
+cd faas-engine-go
+
+# Build the CLI
+go build -o nimbus ./cmd/cli
+
+# Build the gateway (API server)
+go build -o nimbus-gateway ./cmd/proxy
+
+# Build the runtime manager
+go build -o nimbus-runtime ./cmd/runtime-manager
+```
+
+---
+
+## Configuration
+
+### Environment Variables
+
+Create a `.env` file in your project root or set environment variables:
+
+```env
+# Proxy/Gateway Configuration
+PROXY_URL=http://localhost:8080
+PROXY_PORT=8080
+
+# Runtime Manager Configuration
+RUNTIME_PORT=9090
+
+# Database Configuration
+DB_PATH=./data/nimbus.db
+
+# Docker Configuration
+DOCKER_HOST=unix:///var/run/docker.sock
+```
+
+### Setting PROXY_URL
+
+The `PROXY_URL` environment variable specifies the address where the FaaS gateway is running. This is used by the CLI to communicate with the server.
+
+#### On Linux/macOS
+
+```bash
+# Temporary (current session only)
+export PROXY_URL=http://localhost:8080
+
+# Permanent (add to ~/.bash_profile or ~/.zshrc)
+echo 'export PROXY_URL=http://localhost:8080' >> ~/.bash_profile
+source ~/.bash_profile
+```
+
+#### On Windows (PowerShell)
+
+```powershell
+# Temporary (current session only)
+$env:PROXY_URL = "http://localhost:8080"
+
+# Permanent (system-wide)
+setx PROXY_URL "http://localhost:8080"
+
+# Verify
+echo $env:PROXY_URL
+```
+
+#### Using .env File
+
+Create a `.env` file in your working directory:
+
+```env
+PROXY_URL=http://localhost:8080
+PROXY_PORT=8080
+```
+
+Load it in your shell:
+
+```bash
+source .env  # Linux/macOS
+# or
+Get-Content .env | ForEach-Object { $_.split('=') | % { if ($_.length -eq 2) { [Environment]::SetEnvironmentVariable($_[0], $_[1]) } } }  # PowerShell
+```
+
+---
+
+## Getting Started
+
+### 1. Start the Proxy Gateway
+
+```bash
+./cmd/proxy
+```
+
+The Proxy API will be available at `http://localhost:80`
+
+### 2. Start the Runtime Manager
+
+In another terminal:
+
+```bash
+./cmd/runtime-manager
+```
+
+### 3. Configure the CLI
+
+Set the `PROXY_URL` to point to your gateway:
+
+```bash
+export PROXY_URL=http://localhost:8080  # Linux/macOS
+# or
+setx PROXY_URL http://localhost:8080    # Windows
+```
+
+### 4. Deploy a Function
+
+```bash
+nimbus deploy ./samples/hello --name hello-func --runtime node
+```
+
+### 5. Invoke the Function
+
+```bash
+# Via CLI
+nimbus invoke hello-func --data "{}"
+
+# Via HTTP
+curl http://localhost:8080/hello-func
+```
+
+### 6. View Logs
+
+```bash
+nimbus logs hello-func
+```
+
+### 7. List All Functions
+
+```bash
+nimbus list
+```
+
+---
+
+## CLI Commands
+
+| Command | Description |
+|---------|-------------|
+| `nimbus deploy <path>` | Deploy a function from a directory |
+| `nimbus invoke <name>` | Invoke a function |
+| `nimbus list` | List all deployed functions |
+| `nimbus logs <name>` | Stream function logs |
+| `nimbus delete <name>` | Delete a function |
+| `nimbus schedule <name>` | Schedule a function |
+| `nimbus --help` | Show help menu |
+
+---
+
+## Project Structure
+
+```
+faas-engine-go/
+├── cmd/
+│   ├── cli/              # Command-line client
+│   ├── proxy/            # HTTP Gateway/API server
+│   └── runtime-manager/  # Container runtime manager
+├── internal/
+│   ├── api/              # API handlers
+│   ├── service/          # Business logic
+│   ├── sqlite/           # Database layer
+│   ├── sdk/              # Docker SDK wrapper
+│   └── types/            # Type definitions
+├── samples/              # Example functions
+├── runtimes/             # Runtime Docker images
+└── installer/            # Installation scripts
+```
+
+---
+
+## Example Functions
+
+The project includes sample functions in the `samples/` directory:
+
+### Node.js Example
+
+```javascript
+// samples/echo/index.js
+module.exports = (event) => {
+  return {
+    statusCode: 200,
+    body: JSON.stringify({ message: event.body || "Hello!" })
+  };
+};
+```
+
+### Python Example
+
+```python
+# samples/calculator/index.py
+def handler(event, context):
+    return {
+        "statusCode": 200,
+        "body": event.get("body", "Hello from Python!")
+    }
+```
+
+### Go Example
+
 ```go
-func handleInvoke(w http.ResponseWriter, r *http.Request) {
-    // 1. Extract function name from the Host header (e.g., greet.localhost)
-    // 2. Look up the function's container info from the database
-    // 3. Forward the request to the container
-    // 4. Return the function's response to the caller
+// samples/hello/main.go
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+)
+
+func handler(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprintf(w, "Hello from Go!")
+}
+
+func main() {
+	http.HandleFunc("/", handler)
+	log.Fatal(http.ListenAndServe(":8080", nil))
 }
 ```
-
-## 4. Weekly Roadmap
-
-### Phase 1: Foundation (Weeks 1-2)
-*Goal: Learn to control Docker with Go and build the function packaging pipeline.*
-
-#### **Week 1: Docker SDK Fundamentals & FaaS Concepts**
-Instead of typing `docker run`, you will write Go code to do it for you.
-*   **Objectives:**
-    *   Set up the Go development environment.
-    *   Research how AWS Lambda work internally.
-    *   Connect to the Docker Daemon via the official Go SDK (`github.com/docker/docker/client`).
-    *   Write a Go program to spin up/down containers quickly.
-    *   Measure container startup times (baseline for optimization later).
-*   **Deliverable:** A Go binary that spins up a function container and prints invocation latency.
-
-#### **Week 2: Function Packaging & Build Pipeline**
-Turning function code into a runnable container image.
-*   **Objectives:**
-    *   Create sample functions (hello-world, echo, calculator) with Dockerfiles.
-    *   Implement a Go function to package source code into a `.tar.gz` archive.
-    *   Use the Docker SDK to `ImageBuild` an image from the packaged source.
-    *   Create a lightweight base image optimized for fast cold starts.
-*   **Deliverable:** A Go function that builds a Docker image from function source code.
-
-### Phase 2: Execution Engine (Weeks 3-4)
-*Goal: Route HTTP traffic to functions and deploy to the cloud.*
-
-#### **Week 3: HTTP Gateway**
-Routing requests from the internet to the correct function container.
-*   **Objectives:**
-    *   Implement an HTTP gateway using `httputil.ReverseProxy`.
-    *   Route requests based on subdomain (e.g., `greet.localhost` -> Function "greet").
-    *   Inject request context (query params, headers, body) into the function.
-    *   Handle function timeouts and error responses.
-*   **Deliverable:** Invoking functions via HTTP requests.
-
-#### **Week 4: Cloud Deployment & CI/CD**
-Moving from "It works on my machine" to "It works on the Cloud".
-*   **Objectives:**
-    *   SSH into the provided Cloud VM and install Docker and Go.
-    *   Create a GitHub Action that triggers on every `git push`:
-        1.  Builds the Go binary.
-        2.  Transfers it to the VM (via SCP/SSH).
-        3.  Restarts the systemd service.
-    *   Configure DNS to point subdomains to the VM.
-*   **Deliverable:** Deploy a function from a laptop to the Cloud VM.
-
-### Phase 3: Event System (Weeks 5-6)
-*Goal: Add scheduled triggers and function versioning.*
-
-#### **Week 5: Scheduled Triggers**
-Running functions on a schedule.
-*   **Objectives:**
-    *   Implement a cron-style scheduler using a Go library (e.g., `robfig/cron`).
-    *   Add `lambda schedule` CLI command.
-    *   Handle overlapping executions (skip if still running vs. allow parallel).
-    *   Implement async invocation queue.
-*   **Deliverable:** Functions that run on a schedule.
-
-#### **Week 6: State & Versioning**
-Remembering what is deployed and supporting rollbacks.
-*   **Objectives:**
-    *   Implement SQLite for function metadata persistence.
-    *   Add function versioning (each deploy creates a new version).
-    *   Implement `lambda versions` and `lambda rollback` commands.
-    *   Ensure database persistence across platform restarts.
-*   **Deliverable:** Deploy new versions and rollback to previous ones.
-
-### Phase 4: Polish (Weeks 7-8)
-*Goal: Complete the CLI and prepare for demo.*
-
-#### **Week 7: Observability & CLI Completion**
-*   **Objectives:**
-    *   Complete the CLI with all commands: `deploy`, `invoke`, `logs`, `list`, `delete`, `versions`, `rollback`, `schedule`.
-    *   Implement `lambda logs` to stream logs from function containers.
-    *   Add basic metrics (invocation count, duration, errors).
-    *   Add authentication (API Key) so only authorized users can deploy.
-*   **Deliverable:** Full-featured CLI with observability.
-
-#### **Week 8: Documentation & Demo**
-*   **Objectives:**
-    *   Final code cleanup.
-    *   Write user documentation.
-    *   **The Demo:** You will present the project by deploying a fresh function to the live Cloud VM.
-
-
-## 5. Technical Stack
-*   **Language:** Go (Golang)
-*   **Container Engine:** Docker (via Go SDK)
-*   **Database:** SQLite
-*   **CLI Framework:** Cobra
-*   **HTTP Gateway:** Go `net/http` + `httputil.ReverseProxy`
-*   **Scheduler:** `robfig/cron` or similar
-
-## 6. Working Agreements & Expectations
-We treat this internship as a simulation of a real engineering environment.
-
-*   **The 3-Hour Rule:** If you are stuck on a specific error for more than 3 hours, stop and ask for help. We want you to struggle enough to learn, but not enough to burn out.
-*   **Quality > Speed:** It is better to have a fully working function invocation than a broken complex system.
-*   **Understanding is Key:** During code reviews, we will ask "Why?". You must be able to explain every line of code you write.
-*   **Collaborate:** You are a team. Don't split the work in silos (e.g., "I do gateway, you do CLI"). Pair program on the hard parts.
-
-## 7. Standards
-
-### Communication
-*   **Response:** Within 2 hours during working hours
-*   **Meeting Attendance:** Mandatory unless communicated in advance
-*   **Daily Updates:** Required - brief summary of progress and blockers
-*   **Documentation:** All decisions and learnings must be documented
-
-### Work Standards
-*   **Code Quality:** Follow coding standards, passes linting
-*   **Testing:** Should have basic tests
-*   **PR Reviews:** Submit work in reviewable chunks, address feedback promptly
-*   **Deadlines:** Meet timelines or communicate in advance
-
-### General Workflow
-*   **Monday:** Sprint Planning. Review the week's goals. Mentor provides a high-level overview of concepts. (30 min sync)
-*   **Tue-Thu:** Implementation. Async communication over chat to flag blockers.
-*   **Friday:** Code Review & Demo. Show what was built to the mentor. (30 min sync)
