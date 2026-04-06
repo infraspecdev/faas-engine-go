@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -124,6 +125,18 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			slog.Error("failed to deactivate old versions", "error", err)
 		}
 
+		host, _, err := net.SplitHostPort(r.Host)
+		if err != nil {
+			host = r.Host
+		}
+
+		var endpoint string
+		if host == "localhost" || host == "127.0.0.1" {
+			endpoint = fmt.Sprintf("%s.localhost", functionName)
+		} else {
+			endpoint = fmt.Sprintf("%s.%s.nip.io", functionName, host)
+		}
+
 		fn := &models.Function{
 			Name:            functionName,
 			Version:         functionVersion,
@@ -131,7 +144,7 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			Image:           config.ImageRef(config.FunctionsRepo, functionName, functionVersion),
 			Runtime:         "node",
 			ScheduleCron:    "",
-			Endpoint:        fmt.Sprintf("%s.localhost", functionName),
+			Endpoint:        endpoint,
 			Status:          "active",
 			CreatedAt:       time.Now(),
 		}
@@ -142,7 +155,7 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			fmt.Fprintf(out, "\nWARNING: function deployed but DB insert failed\n")
 		}
 
-		_, _ = fmt.Fprintf(out, "\nYour function is live at: http://%s.localhost\n\n", nameParam)
+		_, _ = fmt.Fprintf(out, "\nYour function is live at: http://%s\n\n", endpoint)
 		w.Header().Set("X-Deploy-Status", "OK")
 	}
 }

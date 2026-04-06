@@ -104,7 +104,6 @@ func TestPullImage_InvalidImage(t *testing.T) {
 }
 
 func TestBuildImage_Success(t *testing.T) {
-	t.Parallel()
 
 	// data, err := os.ReadFile("test_samples/function.tar")
 	tarstream, err := buildcontext.CreateTarStream("../../samples/hello", "node")
@@ -119,7 +118,6 @@ func TestBuildImage_Success(t *testing.T) {
 }
 
 func TestBuildImage_InvalidDirectory(t *testing.T) {
-	t.Parallel()
 
 	tarstream, err := buildcontext.CreateTarStream("../test_samples/invalid", "node")
 	if err == nil {
@@ -133,32 +131,41 @@ func TestBuildImage_InvalidDirectory(t *testing.T) {
 }
 
 func TestBuildImage_duplicateImageName(t *testing.T) {
-	t.Parallel()
+	testImageName := "test-duplicate-rebuild"
 
-	err := testDocker.PullImage(testCtx, "alpine")
+	// Create first build
+	tarstream1, err := buildcontext.CreateTarStream("../../samples/hello", "node")
 	if err != nil {
-		t.Fatalf("unexpected error pulling alpine image: %v", err)
+		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
-	t.Log("Pulled image successfully")
+
+	err = testDocker.BuildImage(testCtx, testImageName, tarstream1, io.Discard)
+	if err != nil {
+		t.Fatalf("unexpected error on first build: %v", err)
+	}
+	t.Log("First build succeeded")
 
 	defer func() {
-		err := testDocker.RemoveImage(testCtx, "alpine:latest")
+		err := testDocker.RemoveImage(testCtx, testImageName+":latest")
 		if err != nil {
 			t.Logf("failed to remove image: %v", err)
 		}
 	}()
 
-	tarstream, err := buildcontext.CreateTarStream("../../samples/hello", "node")
+	// Create second build with same image name (rebuild/redeployment scenario)
+	tarstream2, err := buildcontext.CreateTarStream("../../samples/hello", "node")
 	if err != nil {
 		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = testDocker.BuildImage(testCtx, "alpine", tarstream, io.Discard)
-	if err == nil {
-		t.Fatal("expected error for duplicate image name, got nil")
+	// BuildImage now allows rebuilding existing images with ForceRemove: true
+	// This test verifies that rebuilding an existing image succeeds (for redeployment)
+	err = testDocker.BuildImage(testCtx, testImageName, tarstream2, io.Discard)
+	if err != nil {
+		t.Fatalf("expected build to succeed for duplicate image name (rebuild), got error: %v", err)
 	}
 
-	t.Logf("received expected error: %v", err)
+	t.Log("successfully rebuilt existing image")
 }
 
 func TestTagImage_Success(t *testing.T) {
