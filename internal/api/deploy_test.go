@@ -87,6 +87,7 @@ func TestDeployHandler_Success(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/functions", body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Host = "localhost"
 
 	rr := httptest.NewRecorder()
 
