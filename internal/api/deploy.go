@@ -125,9 +125,15 @@ func DeployHandler(deployer Deployer, fs FunctionStore) http.HandlerFunc {
 			slog.Error("failed to deactivate old versions", "error", err)
 		}
 
-		host, _, err := net.SplitHostPort(r.Host)
+		// Get the original host from proxy header, or use direct request host
+		clientHost := r.Header.Get("X-Forwarded-Host")
+		if clientHost == "" {
+			clientHost = r.Host
+		}
+
+		host, _, err := net.SplitHostPort(clientHost)
 		if err != nil {
-			host = r.Host
+			host = clientHost
 		}
 		// For local development, allow "localhost" as host. In production, expect real hostname.
 		var endpoint string

@@ -33,7 +33,7 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 	logger := slog.With("function", name)
 
 	cyan := color.New(color.FgCyan)
-	_, _ = fmt.Fprint(out, "\n[2/3] Building image ")
+	_, _ = fmt.Fprint(out, "\n[4/5] Building image ")
 	_, _ = cyan.Fprintf(out, "\"func-%s\"", name)
 	_, _ = fmt.Fprint(out, "...\n\n")
 
@@ -59,7 +59,7 @@ func (d *Deployer) Deploy(ctx context.Context, name string, file io.Reader, out 
 		return err
 	}
 
-	_, _ = fmt.Fprint(out, "\n[3/3] Pushing image...")
+	_, _ = fmt.Fprint(out, "\n[5/5] Pushing image...")
 
 	logger.Info("image_lifecycle", "stage", "pushing")
 	if err := d.imageClient.PushImage(ctx, target); err != nil {
