@@ -99,6 +99,9 @@ func ProxyHandler(targetURL *url.URL, timeoutSecs ...int) http.Handler {
 				out.Header[k] = vv
 			}
 
+			// Preserve original client host for backend to generate correct endpoint URLs
+			out.Header.Set("X-Forwarded-Host", req.Host)
+
 			slog.Info("control plane request", "path", req.URL.Path, "method", req.Method)
 			return
 		}
@@ -116,6 +119,9 @@ func ProxyHandler(targetURL *url.URL, timeoutSecs ...int) http.Handler {
 		for k, vv := range req.Header {
 			out.Header[k] = vv
 		}
+
+		// Preserve original client host for backend to generate correct endpoint URLs
+		out.Header.Set("X-Forwarded-Host", req.Host)
 
 		slog.Info("invoke request", "function", fn)
 

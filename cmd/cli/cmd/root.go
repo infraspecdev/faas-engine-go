@@ -5,10 +5,8 @@ package cmd
 
 import (
 	"fmt"
-	"log/slog"
 	"os"
 
-	"github.com/joho/godotenv"
 	"github.com/spf13/cobra"
 )
 
@@ -48,9 +46,9 @@ func init() {
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
-	if err := godotenv.Load(); err != nil {
-		slog.Warn("could not load .env file, using default configuration")
-	}
+	// if err := godotenv.Load(); err != nil {
+	// 	slog.Warn("could not load .env file, using default configuration")
+	// }
 	// Use PROXY_URL for proxy endpoint, fallback to localhost
 	targetUrl := os.Getenv("PROXY_URL")
 	if targetUrl == "" {
