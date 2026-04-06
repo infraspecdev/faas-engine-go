@@ -79,7 +79,9 @@ func (d *DockerClient) BuildImage(
 
 	_, err = d.cli.ImagePrune(ctx, client.ImagePruneOptions{})
 	if err != nil {
-		return err
+		if !strings.Contains(err.Error(), "prune operation is already running") {
+			return err
+		}
 	}
 
 	return nil

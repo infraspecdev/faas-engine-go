@@ -135,30 +135,40 @@ func TestBuildImage_InvalidDirectory(t *testing.T) {
 func TestBuildImage_duplicateImageName(t *testing.T) {
 	t.Parallel()
 
-	err := testDocker.PullImage(testCtx, "alpine")
-	if err != nil {
-		t.Fatalf("unexpected error pulling alpine image: %v", err)
-	}
-	t.Log("Pulled image successfully")
+	imageName := "test-rebuild-image:latest"
 
 	defer func() {
-		err := testDocker.RemoveImage(testCtx, "alpine:latest")
+		err := testDocker.RemoveImage(testCtx, imageName)
 		if err != nil {
 			t.Logf("failed to remove image: %v", err)
 		}
 	}()
 
-	tarstream, err := buildcontext.CreateTarStream("../../samples/hello", "node")
+	tarstream1, err := buildcontext.CreateTarStream("../../samples/hello", "node")
 	if err != nil {
 		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	err = testDocker.BuildImage(testCtx, "alpine", tarstream, io.Discard)
-	if err == nil {
-		t.Fatal("expected error for duplicate image name, got nil")
+	// First build
+	err = testDocker.BuildImage(testCtx, imageName, tarstream1, io.Discard)
+	if err != nil {
+		t.Fatalf("expected first build to succeed, got error: %v", err)
+	}
+	t.Log("first build succeeded")
+
+	// Second build with same image name - simulates redeployment
+	// BuildImage with ForceRemove: true should handle this gracefully
+	tarstream2, err := buildcontext.CreateTarStream("../../samples/hello", "node")
+	if err != nil {
+		t.Skipf("unexpected error - failed to create Tar stream: %v", err)
 	}
 
-	t.Logf("received expected error: %v", err)
+	err = testDocker.BuildImage(testCtx, imageName, tarstream2, io.Discard)
+	if err != nil {
+		t.Fatalf("expected rebuild with same image name to succeed, got error: %v", err)
+	}
+
+	t.Log("successfully rebuilt image with same name")
 }
 
 func TestTagImage_Success(t *testing.T) {
